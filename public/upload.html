@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Как загрузить видео — AnyTube</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header>
+  <a class="logo" href="/">Any<b>Tube</b></a>
+  <form class="search" action="/"><input name="q" placeholder="Поиск видео или автора"><button>🔍</button></form>
+  <a class="btn ghost" href="/">← К видео</a>
+</header>
+<main class="doc">
+<h1>Как загрузить видео на AnyTube</h1>
+<p>AnyTube не хранит видео у себя. Все ролики лежат в ваших <b>публичных репозиториях GitHub</b>, а сайт сам находит их и показывает. Ваш канал — это ваш GitHub-аккаунт.</p>
+
+<h2>Главное правило</h2>
+<p>Имя репозитория должно начинаться с <code>anytubevideo_</code>. Пример: репозиторий <code>anytubevideo_myvideo</code> с файлом <code>myvideo.mp4</code> появится на сайте как <code>ваш_ник/anytubevideo_myvideo</code>.</p>
+<p>Поддерживаемые форматы: <code>.mp4</code> (лучше всего, H.264 + AAC), <code>.webm</code>, <code>.mov</code>, <code>.m4v</code>, <code>.ogg</code>.</p>
+
+<h2>Способ 1. Через сайт GitHub (без программ)</h2>
+<ol>
+  <li>Войдите на <a href="https://github.com" target="_blank">github.com</a> и нажмите <b>New repository</b>.</li>
+  <li>Имя: <code>anytubevideo_название</code> (например <code>anytubevideo_my_trip</code>). Видимость — <b>Public</b>.</li>
+  <li>В поле <b>Description</b> напишите заголовок — он станет названием видео.</li>
+  <li>Нажмите <b>Create repository</b> → <b>uploading an existing file</b>, перетащите видео и нажмите <b>Commit changes</b>.</li>
+</ol>
+<div class="note">Через браузер GitHub принимает файлы до <b>25 МБ</b>. Для больших видео используйте способ 2.</div>
+
+<h2>Способ 2. Через Git (файлы до 100 МБ)</h2>
+<pre><code>git clone https://github.com/ВАШ_НИК/anytubevideo_myvideo.git
+cd anytubevideo_myvideo
+copy C:\путь\к\myvideo.mp4 .      # на Linux/macOS: cp ~/myvideo.mp4 .
+git add myvideo.mp4
+git commit -m "Добавил видео"
+git push</code></pre>
+
+<h2>Способ 3. Большие видео (больше 100 МБ) — Git LFS</h2>
+<p>GitHub не принимает обычные файлы больше 100 МБ. Используйте Git LFS — AnyTube понимает такие файлы автоматически.</p>
+<pre><code>git lfs install
+git lfs track "*.mp4"
+git add .gitattributes myvideo.mp4
+git commit -m "Видео через LFS"
+git push</code></pre>
+<div class="note">Бесплатная квота Git LFS у GitHub ограничена по месту и трафику. Если видео перестало грузиться — скорее всего, квота исчерпана. Лучше сжимать ролики перед загрузкой.</div>
+
+<h2>Сжать видео перед загрузкой (ffmpeg)</h2>
+<pre><code>ffmpeg -i input.mov -c:v libx264 -crf 26 -preset slow -vf "scale=-2:720" -c:a aac -b:a 128k -movflags +faststart myvideo.mp4</code></pre>
+<p><code>-movflags +faststart</code> важен: видео начнёт играть сразу, не дожидаясь полной загрузки.</p>
+
+<h2>Альтернатива: тег (topic)</h2>
+<p>Если не хотите менять имя репозитория, добавьте ему topic <code>anytubevideo</code>: на странице репозитория нажмите ⚙ рядом с <b>About</b> → <b>Topics</b>.</p>
+
+<h2>Когда видео появится?</h2>
+<p>Список обновляется раз в 10 минут. Поиск GitHub иногда индексирует новые репозитории с задержкой — до нескольких часов.</p>
+
+<h2>Несколько видео в одном репозитории</h2>
+<p>Можно. Каждый видеофайл в репозитории (в том числе в папках) станет отдельным видео. Но заголовок из Description общий, поэтому для разных роликов удобнее отдельные репозитории — тогда у каждого своё название.</p>
+
+<h2>Как удалить видео</h2>
+<p>Удалите файл или весь репозиторий, либо сделайте его приватным. С сайта видео пропадёт при следующем обновлении.</p>
+
+<h2>Правила</h2>
+<p>Загружайте только то, на что у вас есть права. Контент обязан соответствовать <a href="https://docs.github.com/site-policy/acceptable-use-policies/github-acceptable-use-policies" target="_blank">правилам GitHub</a>.</p>
+</main>
+</body>
+</html>

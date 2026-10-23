@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AnyTube — просмотр</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header>
+  <a class="logo" href="/">Any<b>Tube</b></a>
+  <form class="search" action="/"><input name="q" placeholder="Поиск видео или автора"><button>🔍</button></form>
+  <a class="btn" href="/upload">＋ Загрузить</a>
+</header>
+<main class="watch">
+  <section class="player" id="player"><div class="status">Загрузка…</div></section>
+  <aside class="side" id="side"></aside>
+</main>
+<script src="/app.js"></script>
+<script>
+const id = new URLSearchParams(location.search).get("v");
+api("/api/video?id=" + encodeURIComponent(id)).then((v) => {
+  const el = document.getElementById("player");
+  if (v.error) { el.innerHTML = `<div class="empty">${esc(v.error)}</div>`; return; }
+  document.title = v.title + " — AnyTube";
+  el.innerHTML = `
+    <video src="${esc(v.src)}" controls autoplay playsinline></video>
+    <h1>${esc(v.title)}</h1>
+    <div class="row">
+      <a class="author" href="/?author=${encodeURIComponent(v.owner)}"><img src="${esc(v.avatar)}&s=80" alt="">
+        <div><b>${esc(v.owner)}</b><br><span style="color:var(--muted)">${esc(v.repo)}</span></div></a>
+      <div style="display:flex;gap:8px">
+        <a class="btn" href="${esc(v.src)}?download=1">⬇ Скачать</a>
+        <a class="btn ghost" href="${esc(v.repoUrl)}" target="_blank" rel="noopener">GitHub ★ ${v.stars}</a>
+        <button class="btn ghost" onclick="navigator.clipboard.writeText(location.href);this.textContent='Скопировано'">🔗 Поделиться</button>
+      </div>
+    </div>
+    <p style="color:var(--muted)">Файл: ${esc(v.path)} · обновлено ${ago(v.updated)}</p>`;
+  api("/api/videos").then((d) => {
+    document.getElementById("side").innerHTML = d.videos.filter((x) => x.id !== v.id).slice(0, 20).map(card).join("");
+  });
+});
+</script>
+</body>
+</html>

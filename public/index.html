@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AnyTube — видео из GitHub</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header>
+  <a class="logo" href="/">Any<b>Tube</b></a>
+  <form class="search" id="sf"><input id="q" placeholder="Поиск видео или автора"><button>🔍</button></form>
+  <a class="btn" href="/upload">＋ Загрузить</a>
+</header>
+<main>
+  <div class="status" id="status">Загружаем видео с GitHub…</div>
+  <div class="grid" id="grid"></div>
+</main>
+<script src="/app.js"></script>
+<script>
+const p = new URLSearchParams(location.search);
+const q = p.get("q") || "", author = p.get("author") || "";
+document.getElementById("q").value = q;
+document.getElementById("sf").onsubmit = (e) => { e.preventDefault(); location.search = "?q=" + encodeURIComponent(document.getElementById("q").value); };
+api(`/api/videos?q=${encodeURIComponent(q)}&author=${encodeURIComponent(author)}`).then((d) => {
+  const st = document.getElementById("status");
+  st.textContent = (author ? `Канал ${author} · ` : "") + `${d.count} видео` + (d.error ? ` · ошибка GitHub: ${d.error.slice(0,120)}` : "");
+  const g = document.getElementById("grid");
+  if (!d.videos.length) { g.outerHTML = `<div class="empty">Видео пока нет. <a class="btn" href="/upload">Загрузите первое</a></div>`; return; }
+  g.innerHTML = d.videos.map(card).join("");
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: anytube
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /healthz
+    envVars:
+      - key: GITHUB_TOKEN
+        sync: false
+      - key: CACHE_MINUTES
+        value: "10"
+      - key: NODE_VERSION
+        value: "20"

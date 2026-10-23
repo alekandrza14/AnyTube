@@ -1,0 +1,16 @@
+{
+  "name": "anytube",
+  "version": "1.0.0",
+  "description": "AnyTube — видеохостинг, который берёт видео из GitHub-репозиториев anytubevideo_*",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  }
+}
