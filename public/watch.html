@@ -22,19 +22,31 @@ api("/api/video?id=" + encodeURIComponent(id)).then((v) => {
   const el = document.getElementById("player");
   if (v.error) { el.innerHTML = `<div class="empty">${esc(v.error)}</div>`; return; }
   document.title = v.title + " — AnyTube";
+  const parts = v.parts && v.parts.length ? v.parts : [{ n: 1, src: v.src, duration: 0 }];
+  const multi = parts.length > 1;
   el.innerHTML = `
-    <video src="${esc(v.src)}" controls autoplay playsinline></video>
+    <video id="vid" src="${esc(parts[0].src)}" controls autoplay playsinline></video>
+    ${multi ? `<div class="parts">
+      <div class="parts-head"><b id="partNow">Часть 1 из ${parts.length}</b>
+        <span class="muted">· всего ${fmtDur(v.duration)} · части играют подряд автоматически</span></div>
+      <div class="parts-list">${parts.map((p, i) => `<button data-i="${i}" class="${i ? "" : "on"}">${p.n}${p.duration ? `<small>${fmtDur(p.duration)}</small>` : ""}</button>`).join("")}</div>
+    </div>` : ""}
     <h1>${esc(v.title)}</h1>
     <div class="row">
       <a class="author" href="/?author=${encodeURIComponent(v.owner)}"><img src="${esc(v.avatar)}&s=80" alt="">
         <div><b>${esc(v.owner)}</b><br><span style="color:var(--muted)">${esc(v.repo)}</span></div></a>
       <div style="display:flex;gap:8px">
-        <a class="btn" href="${esc(v.src)}?download=1">⬇ Скачать</a>
+        <a class="btn" id="dl" href="${esc(parts[0].src)}?download=1">⬇ Скачать${multi ? " часть 1" : ""}</a>
         <a class="btn ghost" href="${esc(v.repoUrl)}" target="_blank" rel="noopener">GitHub ★ ${v.stars}</a>
         <button class="btn ghost" onclick="navigator.clipboard.writeText(location.href);this.textContent='Скопировано'">🔗 Поделиться</button>
       </div>
     </div>
-    <p style="color:var(--muted)">Файл: ${esc(v.path)} · обновлено ${ago(v.updated)}</p>
+    <p style="color:var(--muted)">Файл: ${esc(v.path)}${multi ? ` · ${parts.length} частей` : ""} · обновлено ${ago(v.updated)}</p>
+    ${v.descChunks ? `<section class="desc">
+      <div class="muted">Описание · ${Number(v.descChars).toLocaleString("ru")} символов</div>
+      <div id="descText"></div>
+      <button class="btn ghost" id="descMore">Показать ещё</button>
+    </section>` : ""}
     <section class="comments">
       <h2>Комментарии (${v.comments.length})</h2>
       <div class="howto">Чтобы написать комментарий, откройте
@@ -47,6 +59,52 @@ api("/api/video?id=" + encodeURIComponent(id)).then((v) => {
             <p>${esc(c.text) || '<span class="muted">(текст в comment.md)</span>'}</p></div>
         </div>`).join("") || '<p class="muted">Пока никто не комментировал.</p>'}
     </section>`;
+
+  // ---- части большого видео: следующая включается сама ----
+  if (multi) {
+    const vid = document.getElementById("vid"), btns = [...document.querySelectorAll(".parts-list button")];
+    let cur = 0;
+    const go = (i, play = true) => {
+      if (i < 0 || i >= parts.length) return;
+      cur = i;
+      vid.src = parts[i].src;
+      if (play) vid.play().catch(() => {});
+      btns.forEach((b, k) => b.classList.toggle("on", k === i));
+      btns[i].scrollIntoView({ block: "nearest", inline: "center" });
+      document.getElementById("partNow").textContent = `Часть ${i + 1} из ${parts.length}`;
+      const dl = document.getElementById("dl");
+      dl.href = parts[i].src + "?download=1";
+      dl.textContent = `⬇ Скачать часть ${i + 1}`;
+    };
+    vid.addEventListener("ended", () => go(cur + 1));
+    btns.forEach((b) => (b.onclick = () => go(Number(b.dataset.i))));
+    // заранее подгружаем начало следующей части, чтобы переход был без паузы
+    vid.addEventListener("timeupdate", () => {
+      if (vid.duration && vid.duration - vid.currentTime < 15 && parts[cur + 1] && !parts[cur + 1].pre) {
+        parts[cur + 1].pre = true;
+        fetch(parts[cur + 1].src, { headers: { Range: "bytes=0-1048575" } }).catch(() => {});
+      }
+    });
+  }
+
+  // ---- описание: грузится порциями, хоть 1 000 000 000 символов ----
+  if (v.descChunks) {
+    const box = document.getElementById("descText"), more = document.getElementById("descMore");
+    let next = { n: 0, offset: 0 };
+    const load = async () => {
+      if (!next) return;
+      more.disabled = true; more.textContent = "Загрузка…";
+      const d = await api(`/api/desc?id=${encodeURIComponent(v.id)}&n=${next.n}&offset=${next.offset}`);
+      if (d.error) { more.textContent = d.error; return; }
+      box.append(document.createTextNode(d.text));
+      next = d.next;
+      more.disabled = false;
+      more.style.display = next ? "" : "none";
+      more.textContent = `Показать ещё (файл ${next ? next.n + 1 : d.chunks} из ${d.chunks})`;
+    };
+    more.onclick = load;
+    load();
+  }
   api("/api/videos").then((d) => {
     document.getElementById("side").innerHTML = d.videos.filter((x) => x.id !== v.id).slice(0, 20).map(card).join("");
   });

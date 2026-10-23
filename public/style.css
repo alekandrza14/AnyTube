@@ -17,6 +17,17 @@ main{max-width:1400px;margin:0 auto;padding:24px 20px}
 .tabs a.on{background:var(--text);color:var(--bg);border-color:var(--text)}
 .stars{color:#ffc94d;font-weight:600}
 .muted{color:var(--muted)}
+.thumb .dur,.thumb .pc{position:absolute;bottom:6px;background:rgba(0,0,0,.8);color:#fff;font-size:12px;font-weight:600;padding:1px 6px;border-radius:4px}
+.thumb .dur{right:6px}.thumb .pc{left:6px}
+.parts{margin-top:10px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+.parts-head{margin-bottom:8px;font-size:14px}
+.parts-list{display:flex;gap:6px;overflow-x:auto;padding-bottom:4px}
+.parts-list button{flex:none;min-width:48px;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:5px 8px;cursor:pointer;font-weight:600;line-height:1.2}
+.parts-list button small{display:block;font-weight:400;color:var(--muted);font-size:11px}
+.parts-list button.on{background:var(--accent);border-color:var(--accent)}
+.parts-list button.on small{color:#fff}
+.desc{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin:12px 0}
+#descText{white-space:pre-wrap;word-break:break-word;margin:8px 0;max-height:60vh;overflow:auto}
 .comments{margin-top:24px;border-top:1px solid var(--line);padding-top:8px}
 .comments h2{font-size:18px}
 .howto{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:18px;display:flex;flex-wrap:wrap;gap:10px;align-items:center}
