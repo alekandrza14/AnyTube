@@ -12,16 +12,21 @@
   <a class="btn" href="/upload">＋ Загрузить</a>
 </header>
 <main>
+  <div class="tabs" id="tabs"><a data-s="top">🔥 Топ</a><a data-s="new">🕒 Новые</a></div>
   <div class="status" id="status">Загружаем видео с GitHub…</div>
   <div class="grid" id="grid"></div>
 </main>
 <script src="/app.js"></script>
 <script>
 const p = new URLSearchParams(location.search);
-const q = p.get("q") || "", author = p.get("author") || "";
+const q = p.get("q") || "", author = p.get("author") || "", sort = p.get("sort") === "new" ? "new" : "top";
 document.getElementById("q").value = q;
-document.getElementById("sf").onsubmit = (e) => { e.preventDefault(); location.search = "?q=" + encodeURIComponent(document.getElementById("q").value); };
-api(`/api/videos?q=${encodeURIComponent(q)}&author=${encodeURIComponent(author)}`).then((d) => {
+document.getElementById("sf").onsubmit = (e) => { e.preventDefault(); p.set("q", document.getElementById("q").value); location.search = p; };
+for (const a of document.querySelectorAll("#tabs a")) {
+  const s = new URLSearchParams(p); s.set("sort", a.dataset.s); a.href = "?" + s;
+  if (a.dataset.s === sort) a.className = "on";
+}
+api(`/api/videos?q=${encodeURIComponent(q)}&author=${encodeURIComponent(author)}&sort=${sort}`).then((d) => {
   const st = document.getElementById("status");
   st.textContent = (author ? `Канал ${author} · ` : "") + `${d.count} видео` + (d.error ? ` · ошибка GitHub: ${d.error.slice(0,120)}` : "");
   const g = document.getElementById("grid");

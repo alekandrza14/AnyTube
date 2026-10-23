@@ -12,6 +12,10 @@ header{position:sticky;top:0;z-index:10;display:flex;gap:16px;align-items:center
 .btn.ghost{background:var(--panel);border:1px solid var(--line)}
 main{max-width:1400px;margin:0 auto;padding:24px 20px}
 .status{color:var(--muted);margin-bottom:16px}
+.tabs{display:flex;gap:8px;margin-bottom:14px}
+.tabs a{padding:7px 14px;border-radius:18px;background:var(--panel);border:1px solid var(--line);font-weight:600;font-size:14px}
+.tabs a.on{background:var(--text);color:var(--bg);border-color:var(--text)}
+.stars{color:#ffc94d;font-weight:600}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:22px}
 .card{cursor:pointer}
 .thumb{position:relative;aspect-ratio:16/9;background:#000;border-radius:12px;overflow:hidden}

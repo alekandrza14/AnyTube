@@ -7,7 +7,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 
 const PORT = process.env.PORT || 3000;
-const TOKEN = process.env.GITHUB_TOKEN || "";      // очень желателен: без него лимит 60 запросов/час
+// очень желателен: без него лимит 60 запросов/час. Лишние пробелы и "Bearer " срезаются.
+const TOKEN = (process.env.GITHUB_TOKEN || "").trim().replace(/^Bearer\s+/i, "");
 const PREFIX = "anytubevideo_";                     // префикс имени репозитория
 const TOPIC = "anytubevideo";                       // альтернативный способ: topic репозитория
 const CACHE_MS = Number(process.env.CACHE_MINUTES || 10) * 60 * 1000;
@@ -15,14 +16,21 @@ const MAX_PAGES = Number(process.env.MAX_SEARCH_PAGES || 5); // 5 страниц
 const VIDEO_EXT = /\.(mp4|webm|ogg|ogv|mov|m4v)$/i;
 const MIME = { mp4: "video/mp4", m4v: "video/mp4", mov: "video/quicktime", webm: "video/webm", ogg: "video/ogg", ogv: "video/ogg" };
 
-const gh = (url) =>
-  fetch(url, {
-    headers: {
-      Accept: "application/vnd.github+json",
-      "User-Agent": "anytube",
-      ...(TOKEN ? { Authorization: `Bearer ${TOKEN}` } : {}),
-    },
-  });
+let tokenBad = false;
+const gh = async (url) => {
+  const headers = { Accept: "application/vnd.github+json", "User-Agent": "anytube" };
+  if (TOKEN && !tokenBad) {
+    const r = await fetch(url, { headers: { ...headers, Authorization: `Bearer ${TOKEN}` } });
+    if (r.status !== 401) return r;
+    tokenBad = true; // токен отклонён — дальше работаем без него, чтобы сайт не падал
+    console.error("[anytube] GITHUB_TOKEN отклонён GitHub (401). Работаю без токена — пересоздайте токен.");
+  }
+  return fetch(url, { headers });
+};
+
+// Топ: больше звёзд — выше; при равенстве звёзд — свежее выше
+const byStars = (a, b) => b.stars - a.stars || new Date(b.updated) - new Date(a.updated);
+const byNew = (a, b) => new Date(b.updated) - new Date(a.updated);
 
 let cache = { at: 0, videos: [], error: null };
 let refreshing = null;
@@ -83,7 +91,7 @@ async function refresh() {
   for (let i = 0; i < repos.length; i += 8) {
     lists.push(...(await Promise.all(repos.slice(i, i + 8).map((r) => repoVideos(r).catch(() => [])))));
   }
-  const videos = lists.flat().sort((a, b) => new Date(b.updated) - new Date(a.updated));
+  const videos = lists.flat().sort(byStars);
   cache = { at: Date.now(), videos, error: null };
   console.log(`[anytube] обновлено: ${repos.length} репо, ${videos.length} видео`);
 }
@@ -102,10 +110,12 @@ app.get("/api/videos", async (req, res) => {
   const { videos, error, at } = await getVideos();
   const q = (req.query.q || "").toString().toLowerCase().trim();
   const author = (req.query.author || "").toString().toLowerCase();
+  const sort = req.query.sort === "new" ? "new" : "top";
   let list = videos;
   if (author) list = list.filter((v) => v.owner.toLowerCase() === author);
   if (q) list = list.filter((v) => `${v.title} ${v.repoTitle} ${v.owner} ${v.path}`.toLowerCase().includes(q));
-  res.json({ updated: at, error, count: list.length, videos: list });
+  list = [...list].sort(sort === "new" ? byNew : byStars);
+  res.json({ updated: at, error: error || (tokenBad ? "GITHUB_TOKEN неверный, сайт работает без него (лимит 60 запросов/час)" : null), sort, count: list.length, videos: list });
 });
 
 app.get("/api/video", async (req, res) => {

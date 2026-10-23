@@ -9,6 +9,6 @@ const card = (v) => `
   <a class="card" href="/watch?v=${encodeURIComponent(v.id)}">
     <div class="thumb"><video src="${esc(v.src)}#t=1" preload="metadata" muted></video><div class="play">▶</div></div>
     <div class="meta"><img src="${esc(v.avatar)}&s=72" alt="" loading="lazy">
-      <div><h3>${esc(v.title)}</h3><p>${esc(v.owner)} · ${esc(v.repoTitle)}</p><p>${ago(v.updated)} · ★ ${v.stars}</p></div>
+      <div><h3>${esc(v.title)}</h3><p>${esc(v.owner)} · ${esc(v.repoTitle)}</p><p><span class="stars">★ ${v.stars}</span> · ${ago(v.updated)}</p></div>
     </div>
   </a>`;
