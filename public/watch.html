@@ -52,11 +52,13 @@ api("/api/video?id=" + encodeURIComponent(id)).then((v) => {
       }).join("")}
       <div class="muted dl-how">Поставить дизлайк: <a href="/AnyTube-Uploader.zip">AnyTube Uploader</a> → «Поставить дизлайк» → ссылка на это видео → уровень 1–5.</div>
     </section>
-    ${v.descChunks ? `<section class="desc">
-      <div class="muted">Описание · ${Number(v.descChars).toLocaleString("ru")} символов</div>
-      <div id="descText"></div>
-      <button class="btn ghost" id="descMore">Показать ещё</button>
-    </section>` : ""}
+    <section class="desc">
+      <div class="muted"><b style="color:var(--text)">📝 Описание</b>${v.descChars ? ` · ${Number(v.descChars).toLocaleString("ru")} символов` : ""}</div>
+      ${v.descChunks ? `<div id="descText"></div><button class="btn ghost" id="descMore">Загрузка…</button>`
+        : `<p class="muted" style="margin:8px 0 0">Описания пока нет. Чтобы добавить, положите в репозиторий
+            <a href="${esc(v.repoUrl)}" target="_blank" rel="noopener" style="color:var(--accent2)">${esc(v.repo)}</a>
+            файл <code>description.txt</code> (до 1 000 000 000 символов, длинное можно разбить на <code>description.part0001.txt</code>, <code>part0002</code>…).</p>`}
+    </section>
     <section class="comments">
       <h2>Комментарии (${v.comments.length})</h2>
       <div class="howto">Чтобы написать комментарий, откройте

@@ -101,9 +101,17 @@ async function repoVideos(repo, files) {
     const v = await manifestVideo(repo, branch, files).catch(() => null);
     if (v) return v; // в т.ч. [] — видео длиннее 1 года и т.п. не показываем вовсе
   }
-  return (tree.tree || [])
-    .filter((f) => f.type === "blob" && VIDEO_EXT.test(f.path))
+  // Описание обычного репозитория: description.txt / description.part0001.txt… (или README.md, если их нет)
+  const blobs = (tree.tree || []).filter((f) => f.type === "blob");
+  const num = (p) => Number((p.match(/part(\d+)/i) || [0, 0])[1]);
+  let descFiles = blobs.filter((f) => /^description(\.part\d+)?\.(txt|md)$/i.test(f.path)).sort((a, b) => num(a.path) - num(b.path));
+  if (!descFiles.length) descFiles = blobs.filter((f) => /^readme\.(md|txt)$/i.test(f.path)).slice(0, 1);
+  const desc = descFiles.map((f) => ({ repo: repo.name, branch, path: f.path, size: f.size }));
+  const descBytes = desc.reduce((s, d) => s + d.size, 0);
+  return blobs
+    .filter((f) => VIDEO_EXT.test(f.path))
     .map((f) => ({
+      descChunks: desc.length, descChars: 0, descBytes, _desc: desc,
       id: `${repo.full_name}/${f.path}`,
       owner: repo.owner.login,
       avatar: repo.owner.avatar_url,
@@ -238,7 +246,7 @@ app.get("/api/desc", async (req, res) => {
   const offset = Math.max(0, Number(req.query.offset) || 0);
   const chunk = v._desc[n];
   if (!chunk) return res.status(404).json({ error: "Нет такой части описания" });
-  const url = `${RAW}/${v.owner}/${chunk.repo}/main/${chunk.path.split("/").map(encodeURIComponent).join("/")}`;
+  const url = `${RAW}/${v.owner}/${chunk.repo}/${encodeURIComponent(chunk.branch || "main")}/${chunk.path.split("/").map(encodeURIComponent).join("/")}`;
   const up = await fetch(url, { headers: { Range: `bytes=${offset}-${offset + DESC_SLICE - 1}` } });
   if (!up.ok) return res.status(502).json({ error: `GitHub ${up.status}` });
   // если GitHub проигнорировал Range (200), сами пропускаем offset и берём DESC_SLICE байт
