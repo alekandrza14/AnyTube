@@ -74,11 +74,35 @@ async function repoVideos(repo) {
     }));
 }
 
+// Комментарий = репозиторий комментатора: anytubecomment_<автор видео>_<файл видео>_Comment.<N>
+// (ник GitHub не содержит "_", поэтому первый "_" отделяет автора)
+const CPREFIX = "anytubecomment_";
+const safePart = (s) => s.replace(/[^A-Za-z0-9._-]/g, "-").toLowerCase();
+function parseComment(repo) {
+  if (!repo.name.toLowerCase().startsWith(CPREFIX) || repo.private) return null;
+  const m = repo.name.slice(CPREFIX.length).match(/^([A-Za-z0-9-]+)_(.+)_(?:Comment|Commet|Coment)\.(\d+)$/i);
+  if (!m) return null;
+  return {
+    id: repo.full_name, author: m[1].toLowerCase(), file: m[2].toLowerCase(), num: Number(m[3]),
+    by: repo.owner.login, avatar: repo.owner.avatar_url, text: (repo.description || "").trim(),
+    url: repo.html_url, created: repo.created_at,
+  };
+}
+function commentsFor(v, comments) {
+  const base = safePart(path.basename(v.path));
+  return comments
+    .filter((c) => c.author === v.owner.toLowerCase() &&
+      (c.file === base || (c.file.length >= 20 && base.startsWith(c.file)))) // длинные имена обрезаются
+    .sort((a, b) => new Date(a.created) - new Date(b.created));
+}
+
 async function refresh() {
-  const [byName, byTopic] = await Promise.all([
+  const [byName, byTopic, commentRepos] = await Promise.all([
     searchRepos(`${PREFIX} in:name fork:false`),
     searchRepos(`topic:${TOPIC} fork:false`).catch(() => []),
+    searchRepos(`${CPREFIX} in:name fork:false`).catch(() => []),
   ]);
+  const comments = commentRepos.map(parseComment).filter(Boolean);
   const map = new Map();
   for (const repo of [...byName, ...byTopic]) {
     const okName = repo.name.toLowerCase().startsWith(PREFIX);
@@ -92,8 +116,9 @@ async function refresh() {
     lists.push(...(await Promise.all(repos.slice(i, i + 8).map((r) => repoVideos(r).catch(() => [])))));
   }
   const videos = lists.flat().sort(byStars);
+  for (const v of videos) v.comments = commentsFor(v, comments);
   cache = { at: Date.now(), videos, error: null };
-  console.log(`[anytube] обновлено: ${repos.length} репо, ${videos.length} видео`);
+  console.log(`[anytube] обновлено: ${repos.length} репо, ${videos.length} видео, ${comments.length} комментариев`);
 }
 
 async function getVideos() {
@@ -114,7 +139,8 @@ app.get("/api/videos", async (req, res) => {
   let list = videos;
   if (author) list = list.filter((v) => v.owner.toLowerCase() === author);
   if (q) list = list.filter((v) => `${v.title} ${v.repoTitle} ${v.owner} ${v.path}`.toLowerCase().includes(q));
-  list = [...list].sort(sort === "new" ? byNew : byStars);
+  list = [...list].sort(sort === "new" ? byNew : byStars)
+    .map(({ comments, ...v }) => ({ ...v, commentCount: (comments || []).length })); // в ленте только число
   res.json({ updated: at, error: error || (tokenBad ? "GITHUB_TOKEN неверный, сайт работает без него (лимит 60 запросов/час)" : null), sort, count: list.length, videos: list });
 });
 

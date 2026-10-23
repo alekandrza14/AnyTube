@@ -34,7 +34,19 @@ api("/api/video?id=" + encodeURIComponent(id)).then((v) => {
         <button class="btn ghost" onclick="navigator.clipboard.writeText(location.href);this.textContent='Скопировано'">🔗 Поделиться</button>
       </div>
     </div>
-    <p style="color:var(--muted)">Файл: ${esc(v.path)} · обновлено ${ago(v.updated)}</p>`;
+    <p style="color:var(--muted)">Файл: ${esc(v.path)} · обновлено ${ago(v.updated)}</p>
+    <section class="comments">
+      <h2>Комментарии (${v.comments.length})</h2>
+      <div class="howto">Чтобы написать комментарий, откройте
+        <a href="/AnyTube-Uploader.zip">AnyTube Uploader</a> → «Написать комментарий» и вставьте ссылку на это видео.
+        <button class="btn ghost" onclick="navigator.clipboard.writeText(location.href);this.textContent='Ссылка скопирована'">Скопировать ссылку</button>
+      </div>
+      ${v.comments.map((c) => `
+        <div class="comment"><img src="${esc(c.avatar)}&s=72" alt="" loading="lazy">
+          <div><b>${esc(c.by)}</b> <span class="muted">· ${ago(c.created)} · <a href="${esc(c.url)}" target="_blank" rel="noopener">№${c.num} на GitHub</a></span>
+            <p>${esc(c.text) || '<span class="muted">(текст в comment.md)</span>'}</p></div>
+        </div>`).join("") || '<p class="muted">Пока никто не комментировал.</p>'}
+    </section>`;
   api("/api/videos").then((d) => {
     document.getElementById("side").innerHTML = d.videos.filter((x) => x.id !== v.id).slice(0, 20).map(card).join("");
   });

@@ -19,6 +19,21 @@
 <p>Имя репозитория должно начинаться с <code>anytubevideo_</code>. Пример: репозиторий <code>anytubevideo_myvideo</code> с файлом <code>myvideo.mp4</code> появится на сайте как <code>ваш_ник/anytubevideo_myvideo</code>.</p>
 <p>Поддерживаемые форматы: <code>.mp4</code> (лучше всего, H.264 + AAC), <code>.webm</code>, <code>.mov</code>, <code>.m4v</code>, <code>.ogg</code>.</p>
 
+<h2>Самый простой способ: AnyTube Uploader (Windows)</h2>
+<p><a class="btn" href="/AnyTube-Uploader.zip">⬇ Скачать AnyTube Uploader</a></p>
+<ol>
+  <li>Распакуйте архив и запустите <code>AnyTube.cmd</code> (или перетащите видео прямо на него).</li>
+  <li>Программа сама скачает всё нужное: Python, Git, Git LFS и FFmpeg.</li>
+  <li>Один раз вставьте токен GitHub: <a href="https://github.com/settings/tokens/new" target="_blank">github.com/settings/tokens/new</a> → Tokens (classic) → галочка <code>public_repo</code>.</li>
+  <li>Выберите видео и введите название. Репозиторий <code>anytubevideo_…</code> создастся сам.</li>
+</ol>
+<p>Видео больше 100 МБ загружаются через Git LFS в полном качестве (до 2 ГБ). Ещё больше — сначала сжимаются. Форматы .mov, .mkv, .avi и другие конвертируются в MP4.</p>
+
+<h2>Комментарии</h2>
+<p>Комментарий — это репозиторий в аккаунте того, кто его пишет:</p>
+<pre><code>ваш_ник/anytubecomment_автор-видео_myvideo.mp4_Comment.1</code></pre>
+<p>Uploader создаёт его сам: «Написать комментарий» → вставьте ссылку на видео → текст. Номер растёт сам (Comment.2, Comment.3…). Короткий текст хранится в описании репозитория, полный — в <code>comment.md</code>. Удалить комментарий = удалить репозиторий.</p>
+
 <h2>Способ 1. Через сайт GitHub (без программ)</h2>
 <ol>
   <li>Войдите на <a href="https://github.com" target="_blank">github.com</a> и нажмите <b>New repository</b>.</li>

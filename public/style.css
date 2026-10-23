@@ -16,6 +16,15 @@ main{max-width:1400px;margin:0 auto;padding:24px 20px}
 .tabs a{padding:7px 14px;border-radius:18px;background:var(--panel);border:1px solid var(--line);font-weight:600;font-size:14px}
 .tabs a.on{background:var(--text);color:var(--bg);border-color:var(--text)}
 .stars{color:#ffc94d;font-weight:600}
+.muted{color:var(--muted)}
+.comments{margin-top:24px;border-top:1px solid var(--line);padding-top:8px}
+.comments h2{font-size:18px}
+.howto{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:18px;display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.howto a{color:var(--accent2);font-weight:600}
+.comment{display:flex;gap:12px;margin-bottom:16px}
+.comment img{width:36px;height:36px;border-radius:50%}
+.comment p{margin:4px 0 0;white-space:pre-wrap;word-break:break-word}
+.comment a{text-decoration:underline}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:22px}
 .card{cursor:pointer}
 .thumb{position:relative;aspect-ratio:16/9;background:#000;border-radius:12px;overflow:hidden}
