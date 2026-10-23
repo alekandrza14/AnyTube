@@ -42,6 +42,16 @@ api("/api/video?id=" + encodeURIComponent(id)).then((v) => {
       </div>
     </div>
     <p style="color:var(--muted)">Файл: ${esc(v.path)}${multi ? ` · ${parts.length} частей` : ""} · обновлено ${ago(v.updated)}</p>
+    <section class="dislikes">
+      <div class="dl-head"><b>👎 Дизлайки: ${v.dislikes.total}</b>
+        ${v.dislikes.total ? `<span class="muted">· средний уровень ${v.dislikes.avg} из 5</span>` : ""}</div>
+      ${["😕", "😒", "👎", "😖", "🤮"].map((e, i) => {
+        const n = v.dislikes.levels[i], max = Math.max(1, ...v.dislikes.levels);
+        return `<div class="dl-row"><span class="dl-lbl">${e} ${i + 1} · ${esc(v.dislikeLabels[i])}</span>
+          <span class="dl-bar"><i class="l${i + 1}" style="width:${(n / max) * 100}%"></i></span><span class="dl-n">${n}</span></div>`;
+      }).join("")}
+      <div class="muted dl-how">Поставить дизлайк: <a href="/AnyTube-Uploader.zip">AnyTube Uploader</a> → «Поставить дизлайк» → ссылка на это видео → уровень 1–5.</div>
+    </section>
     ${v.descChunks ? `<section class="desc">
       <div class="muted">Описание · ${Number(v.descChars).toLocaleString("ru")} символов</div>
       <div id="descText"></div>

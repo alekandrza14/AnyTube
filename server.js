@@ -138,6 +138,30 @@ function parseComment(repo) {
     url: repo.html_url, created: repo.created_at,
   };
 }
+// Дизлайк = anytubecomment_<автор>_<файл>_Commet.<уровень 1–5>.diske (одному видео — один голос от человека)
+const DISLIKE_LABELS = ["Ну не очень", "Так себе", "Плохо", "Очень плохо, зря потратил время", "Это убогий видос, мой день испорчен"];
+function parseDislike(repo) {
+  if (!repo.name.toLowerCase().startsWith(CPREFIX) || repo.private) return null;
+  const m = repo.name.slice(CPREFIX.length).match(/^([A-Za-z0-9-]+)_(.+)_(?:Comment|Commet|Coment)\.([1-5])\.(?:diske|dislike|dizlike)$/i);
+  if (!m) return null;
+  return { author: m[1].toLowerCase(), file: m[2].toLowerCase(), level: Number(m[3]),
+    by: repo.owner.login.toLowerCase(), created: repo.created_at };
+}
+function dislikesFor(v, dislikes) {
+  const base = safePart(path.basename(v.path));
+  const perUser = new Map();
+  for (const d of dislikes) {
+    if (d.author !== v.owner.toLowerCase() || d.by === d.author) continue; // себе дизлайк не считается
+    if (!(d.file === base || (d.file.length >= 20 && base.startsWith(d.file)))) continue;
+    const prev = perUser.get(d.by);
+    if (!prev || new Date(d.created) > new Date(prev.created)) perUser.set(d.by, d); // один голос на человека
+  }
+  const levels = [0, 0, 0, 0, 0];
+  for (const d of perUser.values()) levels[d.level - 1]++;
+  const total = levels.reduce((a, b) => a + b, 0);
+  const avg = total ? levels.reduce((s, n, i) => s + n * (i + 1), 0) / total : 0;
+  return { total, levels, avg: Math.round(avg * 10) / 10 };
+}
 function commentsFor(v, comments) {
   const base = safePart(path.basename(v.path));
   return comments
@@ -153,6 +177,7 @@ async function refresh() {
     searchRepos(`${CPREFIX} in:name fork:false`).catch(() => []),
   ]);
   const comments = commentRepos.map(parseComment).filter(Boolean);
+  const dislikes = commentRepos.map(parseDislike).filter(Boolean);
   const map = new Map();
   for (const repo of [...byName, ...byTopic]) {
     const okName = repo.name.toLowerCase().startsWith(PREFIX);
@@ -167,7 +192,7 @@ async function refresh() {
     lists.push(...(await Promise.all(repos.slice(i, i + 8).map((r) => repoVideos(r, files).catch(() => [])))));
   }
   const videos = lists.flat().sort(byStars);
-  for (const v of videos) v.comments = commentsFor(v, comments);
+  for (const v of videos) { v.comments = commentsFor(v, comments); v.dislikes = dislikesFor(v, dislikes); }
   cache = { at: Date.now(), videos, files, error: null };
   console.log(`[anytube] обновлено: ${repos.length} репо, ${videos.length} видео, ${comments.length} комментариев`);
 }
@@ -191,7 +216,8 @@ app.get("/api/videos", async (req, res) => {
   if (author) list = list.filter((v) => v.owner.toLowerCase() === author);
   if (q) list = list.filter((v) => `${v.title} ${v.repoTitle} ${v.owner} ${v.path}`.toLowerCase().includes(q));
   list = [...list].sort(sort === "new" ? byNew : byStars)
-    .map(({ comments, parts, _desc, ...v }) => ({ ...v, partCount: parts ? parts.length : 1, commentCount: (comments || []).length })); // в ленте только числа
+    .map(({ comments, parts, _desc, dislikes, ...v }) => ({ ...v, partCount: parts ? parts.length : 1,
+      commentCount: (comments || []).length, dislikeCount: dislikes ? dislikes.total : 0, dislikeAvg: dislikes ? dislikes.avg : 0 })); // в ленте только числа
   res.json({ updated: at, error: error || (tokenBad ? "GITHUB_TOKEN неверный, сайт работает без него (лимит 60 запросов/час)" : null), sort, count: list.length, videos: list });
 });
 
@@ -200,7 +226,7 @@ app.get("/api/video", async (req, res) => {
   const v = videos.find((x) => x.id === req.query.id);
   if (!v) return res.status(404).json({ error: "Видео не найдено" });
   const { _desc, ...pub } = v;
-  res.json(pub);
+  res.json({ ...pub, dislikeLabels: DISLIKE_LABELS });
 });
 
 // Описание порциями: ?id=<видео>&n=<номер куска, с 0>&offset=<байт>. Режем по границе символа UTF-8.

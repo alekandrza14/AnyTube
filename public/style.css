@@ -26,6 +26,16 @@ main{max-width:1400px;margin:0 auto;padding:24px 20px}
 .parts-list button small{display:block;font-weight:400;color:var(--muted);font-size:11px}
 .parts-list button.on{background:var(--accent);border-color:var(--accent)}
 .parts-list button.on small{color:#fff}
+.dislikes{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin:12px 0}
+.dl-head{margin-bottom:8px}
+.dl-row{display:grid;grid-template-columns:minmax(0,1.6fr) 1fr 36px;gap:10px;align-items:center;font-size:13px;margin:4px 0}
+.dl-lbl{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dl-bar{height:8px;background:var(--bg);border-radius:4px;overflow:hidden}
+.dl-bar i{display:block;height:100%;border-radius:4px}
+.dl-bar .l1{background:#c9b458}.dl-bar .l2{background:#d9963b}.dl-bar .l3{background:#e0703a}.dl-bar .l4{background:#e04848}.dl-bar .l5{background:#9b3bd4}
+.dl-n{text-align:right;font-weight:600}
+.dl-how{margin-top:8px;font-size:13px}.dl-how a{color:var(--accent2);font-weight:600}
+@media(max-width:600px){.dl-row{grid-template-columns:1fr 70px 30px}}
 .desc{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin:12px 0}
 #descText{white-space:pre-wrap;word-break:break-word;margin:8px 0;max-height:60vh;overflow:auto}
 .comments{margin-top:24px;border-top:1px solid var(--line);padding-top:8px}
