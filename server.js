@@ -127,7 +127,7 @@ async function manifestVideo(repo, branch, files) {
 }
 
 // Магазин: тип (видео / приложение / обои), цены в копейках, бесплатные файлы и (скрыто) платные файлы
-const KINDS = new Set(["video", "app", "wallpaper"]);
+const KINDS = new Set(["video", "app", "wallpaper", "game", "model"]);
 const PAID_PREFIX = "anytubepaid_";
 function shopInfo(m, owner, repo, okPath) {
   const kind = KINDS.has(m.kind) ? m.kind : "video";
@@ -136,7 +136,7 @@ function shopInfo(m, owner, repo, okPath) {
   const int = (x) => (Number.isInteger(x) && x > 0 && x <= 100_000_000 ? x : null);
   const s = m.sale && typeof m.sale === "object" ? m.sale : {};
   const sale = {};
-  if (int(s.per_hour) && kind === "video") sale.per_hour = s.per_hour;
+  if (int(s.per_hour) && (kind === "video" || kind === "game")) sale.per_hour = s.per_hour;
   if (int(s.buy)) sale.buy = s.buy;
   if (kind === "app" && s.sub && typeof s.sub === "object") {
     const sub = Object.fromEntries(["hour", "day", "month", "year"].filter((p) => int(s.sub[p])).map((p) => [p, s.sub[p]]));
@@ -146,7 +146,11 @@ function shopInfo(m, owner, repo, okPath) {
   const pParts = (paid.parts || []).filter(okPaid).filter((p) => VIDEO_EXT.test(p.path));
   const pFiles = (paid.files || []).filter(okPaid);
   const pub = (m.files || []).filter(okPub);
-  const isPaid = Object.keys(sale).length > 0 && (pParts.length || pFiles.length);
+  // WebGL-игра: папка в отдельном репозитории (публичном — бесплатно, приватном — платно)
+  const okGame = (g, ok) => g && typeof g === "object" && ok({ repo: g.repo, path: g.entry }) && (g.dir === "" || okPath(g.dir)) ? g : null;
+  const pubGame = kind === "game" ? okGame(m.game, okPub) : null;
+  const paidGame = kind === "game" ? okGame(paid.game, okPaid) : null;
+  const isPaid = Object.keys(sale).length > 0 && (pParts.length || pFiles.length || paidGame);
   const fileUrl = (f) => `${f.lfs ? LFS_RAW : RAW}/${owner}/${f.repo}/HEAD/${f.path.split("/").map(encodeURIComponent).join("/")}`;
   return {
     kind, ownerId: repo.owner.id,
@@ -156,6 +160,8 @@ function shopInfo(m, owner, repo, okPath) {
     paidParts: isPaid ? pParts.map((p, i) => ({ n: i + 1, duration: Number(p.duration) || 0, size: Number(p.size) || 0 })) : [],
     paidFiles: isPaid ? pFiles.map((f, i) => ({ i, name: String(f.name || path.basename(f.path)).slice(0, 200), size: Number(f.size) || 0 })) : [],
     _paid: isPaid ? { parts: pParts, files: pFiles } : null,
+    game: kind === "game" && (isPaid ? paidGame : pubGame) ? { paid: !!isPaid } : null,
+    _game: kind === "game" ? (isPaid ? (paidGame && { ...paidGame, private: true }) : (pubGame && { ...pubGame, private: false })) || null : null,
   };
 }
 
@@ -299,7 +305,7 @@ app.get("/api/videos", async (req, res) => {
   if (kind) list = list.filter((v) => v.kind === kind);
   if (q) list = list.filter((v) => `${v.title} ${v.repoTitle} ${v.owner} ${v.path}`.toLowerCase().includes(q));
   list = [...list].sort(sort === "new" ? byNew : byStars)
-    .map(({ comments, parts, _desc, _paid, dislikes, ...v }) => ({ ...v, likes: likesOf(v.id), partCount: parts ? parts.length : 1,
+    .map(({ comments, parts, _desc, _paid, _game, dislikes, ...v }) => ({ ...v, likes: likesOf(v.id), partCount: parts ? parts.length : 1,
       commentCount: (comments || []).filter((c) => !isCommentHidden(c.id) && !isBanned(c.by)).length, dislikeCount: dislikes ? dislikes.total : 0, dislikeAvg: dislikes ? dislikes.avg : 0 })); // в ленте только числа
   res.json({ updated: at, error: error || (tokenBad ? "GITHUB_TOKEN неверный, сайт работает без него (лимит 60 запросов/час)" : null), sort, count: list.length, videos: list });
 });
@@ -311,7 +317,7 @@ app.get("/api/video", async (req, res) => {
   const mod = moderationState(v);
   if (isHidden(v) && !canSeeHidden(req, v)) // непроверенное и скрытое видят только автор и администратор
     return res.status(404).json({ error: mod.pending ? "Видео ещё на проверке у модератора" : "Видео недоступно: скрыто администрацией" });
-  const { _desc, _paid, ...pub } = v;
+  const { _desc, _paid, _game, ...pub } = v;
   Object.assign(pub, mod);
   pub.hidden = isHidden(v);
   pub.likes = likesOf(v.id);

@@ -12,7 +12,7 @@ const fmtDur = (s) => {
   return (d ? `${d} дн. ` : "") + (h || d ? `${h}:${pad(m)}:${pad(sec)}` : `${m}:${pad(sec)}`);
 };
 const badge = (v) => {
-  const k = { app: "📦 Приложение", wallpaper: "🖼 Обои" }[v.kind] || "";
+  const k = { app: "📦 Приложение", wallpaper: "🖼 Обои", game: "🎮 Игра", model: "🧊 3D-модель" }[v.kind] || "";
   const s = v.sale, R = (x) => (x / 100).toFixed(2).replace(".", ",").replace(",00", "") + " ₽";
   const price = s ? (s.per_hour ? `${R(s.per_hour)}/час` : s.buy ? R(s.buy) : s.sub ? "подписка" : "") : (v.kind !== "video" ? "бесплатно" : "");
   if (v.kind === "wallpaper") return s

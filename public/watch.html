@@ -11,6 +11,7 @@
 <header>
   <a class="logo" href="/"><img src="/logo-emblem.png" alt="">Any<b>Tube</b></a>
   <form class="search" action="/"><input name="q" placeholder="Поиск видео или автора"><button>🔍</button></form>
+  <a class="btn ghost" href="/?kind=game">🎮 Игры</a>
   <a class="btn ghost" href="/wallpapers">🖼 Обои</a>
   <a class="btn ghost" href="/bux">💰 Букс</a>
   <a class="btn" href="/upload">＋ Загрузить</a>
@@ -41,7 +42,7 @@ api("/api/video?id=" + encodeURIComponent(id)).then((v) => {
       <a class="author" href="/?author=${encodeURIComponent(v.owner)}"><img src="${esc(v.avatar)}&s=80" alt="">
         <div><b>${esc(v.owner)}</b><br><span style="color:var(--muted)">${esc(v.repo)}</span></div></a>
       <div style="display:flex;gap:8px">
-        <a class="btn" id="dl" href="${esc(parts[0].src)}?download=1">⬇ Скачать${v.trailer ? " трейлер" : v.kind === "wallpaper" && v.sale ? " превью" : multi ? " часть 1" : ""}</a>
+        <a class="btn" id="dl" href="${esc(parts[0].src)}?download=1">⬇ Скачать${v.trailer ? " трейлер" : v.kind === "game" || v.kind === "model" ? " ролик" : v.kind === "wallpaper" && v.sale ? " превью" : multi ? " часть 1" : ""}</a>
         <span class="like-wrap"><button class="btn like-btn" id="likeBtn"><b class="plus">+</b> <span id="likeN">${v.likes || 0}</span></button><small class="like-ip" id="likeIp"></small></span>
         <a class="btn ghost" href="${esc(v.repoUrl)}" target="_blank" rel="noopener">GitHub</a>
         <button class="btn ghost" onclick="navigator.clipboard.writeText(location.href);this.textContent='Скопировано'">🔗 Поделиться</button>

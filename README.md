@@ -82,6 +82,14 @@ npm start
 
 **Настройка:** `PAID_TOKEN` — classic-токен аккаунта **alekandrza14**: github.com/settings/tokens/new → Tokens (classic) → галочка **repo** → Generate.
 
+## 🎮 WebGL-игры и 🧊 3D-модели
+- **Игра** — папка WebGL-сборки (Unity, Godot, Construct, Phaser, любая HTML5) в отдельном репозитории: бесплатная — публичный `anytubevideo_<имя>_game`, платная — приватный `anytubepaid_<имя>`. В `anytube.json`: `"kind": "game"`, `"game"` (или `"paid": {"game"}`) = `{repo, dir, entry}`.
+  Цены: `per_hour` (например 100 коп. = 1 ₽/час, списывается поминутно и **точно**: копейки за минуту копятся дробно) и/или `buy`.
+- Игра открывается по адресу `/play/<подписанный ключ>/…` в `<iframe sandbox>` без `allow-same-origin` + заголовок `Content-Security-Policy: sandbox`: у кода игры «пустой» источник, он не видит куки и не может вызывать API сайта от имени игрока. Все POST-запросы с чужим `Origin` (в том числе `null` из игры) сайт отклоняет.
+- Файлы Git LFS (больше 95 МБ) сайт распознаёт и берёт из LFS сам; `.br`/`.gz` отдаются с `Content-Encoding`, `.wasm` — как `application/wasm`.
+- Сохранения HTML5-игр (localStorage) пересылаются странице и хранятся в браузере игрока. Сохранения Unity через IndexedDB в песочнице не работают.
+- **3D-модель** — `"kind": "model"`, файлы как у приложения (бесплатно или `buy`). `.glb` показывается в 3D прямо на странице (`<model-viewer>`).
+
 ## 🖼 Живые обои с установщиком
 Кнопка «Скачать обои с установщиком» отдаёт zip, собранный на лету: `wallpaper.<ext>` (оригинал обоев) + проигрыватель из папки `wallpaper-kit/`
 (`live_wallpaper.py`, `install.cmd`, `start.cmd`, `stop.cmd`, `autostart.cmd`, `README.txt`). Платные обои — только после покупки.

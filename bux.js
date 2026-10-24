@@ -47,7 +47,7 @@ const rub = (k) => (k / 100).toFixed(2);
 
 // ─────────────── хранилище ───────────────
 const EMPTY = () => ({ v: 1, seq: 1, users: {}, campaigns: {}, views: {}, ipViews: {}, withdrawals: {}, topups: {}, ops: [],
-  purchases: {}, timepass: {}, sbp: {}, dislikeDone: {}, hidden: {}, likes: {}, likeIp: {}, likeDone: {},
+  purchases: {}, timepass: {}, timefrac: {}, sbp: {}, dislikeDone: {}, hidden: {}, likes: {}, likeIp: {}, likeDone: {},
   reports: {}, hiddenComments: {}, bannedAuthors: {}, approved: {}, rejected: {}, trusted: {}, premodInit: false });
 let db = EMPTY();
 let dbSha = null, dirty = false, saving = null, loaded = false;
@@ -217,6 +217,12 @@ export function mountBux(app, getVideos) {
   const guard = (res) => { if (!loaded) { res.status(503).json({ error: "Букс временно недоступен (база не загружена)" }); return false; } return true; };
   const auth = (req, res) => {
     if (!guard(res)) return null;
+    // защита от подделки запросов с чужих сайтов и из игр (у игр «пустой» origin: null)
+    const origin = req.headers.origin;
+    if (req.method !== "GET" && origin) {
+      let host = ""; try { host = new URL(origin).host; } catch {}
+      if (host !== req.headers.host) { res.status(403).json({ error: "Запрос с чужого сайта отклонён" }); return null; }
+    }
     const u = sessionUser(req);
     if (!u) res.status(401).json({ error: "Войдите через GitHub" });
     return u;
@@ -576,21 +582,26 @@ export function mountBux(app, getVideos) {
   app.post("/api/shop/tick", async (req, res) => {
     const u = auth(req, res); if (!u) return;
     const v = await findVideo(String((await readBody(req)).id || ""));
-    if (!v || !v.sale?.per_hour) return res.status(404).json({ error: "Почасовой просмотр недоступен" });
+    if (!v || !v.sale?.per_hour) return res.status(404).json({ error: v?.kind === "game" ? "Почасовая игра недоступна" : "Почасовой просмотр недоступен" });
     const a = access(u, v);
     if (a.owned) return res.json({ ok: true, owned: true });
     const now = Date.now(), tp = (db.timepass[u.uid] ||= {});
     // клиент спрашивает каждые 30 с; следующая минута списывается, только когда оплаченного времени осталось < 20 с
     // (минута за минуту; паузы не оплачиваются; запас 25 с на выдаче не даёт видео оборваться между тиками)
     if ((tp[v.id] || 0) - now > 20e3) return res.json({ ok: true, timeUntil: tp[v.id], funds: funds(u) });
-    const cost = Math.max(1, Math.round(v.sale.per_hour / 60));
-    if (!spend(u, cost)) return res.status(402).json({ error: "Баланс закончился — пополните, чтобы смотреть дальше" });
+    // точная цена: копейки за минуту копятся дробно (1 ₽/час = ровно 100 коп. за 60 минут, а не 2 коп. × 60)
+    const fr = ((db.timefrac ||= {})[u.uid] ||= {});
+    const owe = (fr[v.id] || 0) + v.sale.per_hour / 60;
+    const cost = Math.floor(owe + 1e-9);
+    const game = v.kind === "game";
+    if (!spend(u, cost)) return res.status(402).json({ error: game ? "Баланс закончился — пополните, чтобы играть дальше" : "Баланс закончился — пополните, чтобы смотреть дальше" });
+    fr[v.id] = Math.max(0, owe - cost);
     tp[v.id] = Math.max(tp[v.id] || 0, now) + 60e3;
-    opMerge(u.uid, "watch", -cost, `просмотр «${v.title}»`);
+    if (cost) opMerge(u.uid, "watch", -cost, game ? `игра «${v.title}»` : `просмотр «${v.title}»`);
     const s = seller(v), net = cost * (1 - CFG.saleCommission);
     s.earnFrac = (s.earnFrac || 0) + net; const whole = Math.floor(s.earnFrac); s.earnFrac -= whole;
     s.earn += whole; s.earned = (s.earned || 0) + whole;
-    opMerge(s.uid, "sale", whole, `просмотры «${v.title}»`);
+    if (whole) opMerge(s.uid, "sale", whole, game ? `игра по времени «${v.title}»` : `просмотры «${v.title}»`);
     save();
     res.json({ ok: true, charged: cost, timeUntil: tp[v.id], funds: funds(u) });
   });
@@ -612,6 +623,10 @@ export function mountBux(app, getVideos) {
     if (/\.webm$/i.test(f.path)) res.setHeader("Content-Type", "video/webm");
     res.setHeader("Accept-Ranges", "bytes");
     res.setHeader("Cache-Control", "private, no-store");
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("Content-Security-Policy", "sandbox"); // чужой файл не исполнится как страница сайта
+    if (/\.(html?|svg|xml|xhtml)$/i.test(f.path)) res.setHeader("Content-Type", "application/octet-stream");
+    if (/\.glb$/i.test(f.path)) res.setHeader("Content-Type", "model/gltf-binary");
     if (req.query.download) res.setHeader("Content-Disposition", `attachment; filename*=UTF-8''${encodeURIComponent(f.name || f.path.split("/").pop())}`);
     const { Readable } = await import("node:stream");
     const st = Readable.fromWeb(up.body);
@@ -639,6 +654,141 @@ export function mountBux(app, getVideos) {
     if (!access(u, v).owned) return res.status(402).send("Нет доступа: сначала купите или оформите подписку");
     req.query.download = "1";
     streamPaid(req, res, v, f);
+  });
+
+  // ═══════════════ WebGL-ИГРЫ И 3D-МОДЕЛИ ═══════════════
+  // Игра открывается в «песочнице»: <iframe sandbox> без allow-same-origin + заголовок CSP sandbox на каждом файле.
+  // У кода игры «пустой» источник (origin null): он не видит куки, вход и баланс зрителя и ничего не может сделать от его имени.
+  const GAME_MIME = { html: "text/html; charset=utf-8", htm: "text/html; charset=utf-8", js: "text/javascript; charset=utf-8", mjs: "text/javascript; charset=utf-8",
+    css: "text/css; charset=utf-8", json: "application/json", wasm: "application/wasm", data: "application/octet-stream", mem: "application/octet-stream",
+    png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp", svg: "image/svg+xml", ico: "image/x-icon",
+    mp3: "audio/mpeg", ogg: "audio/ogg", wav: "audio/wav", m4a: "audio/mp4", mp4: "video/mp4", webm: "video/webm",
+    woff: "font/woff", woff2: "font/woff2", ttf: "font/ttf", otf: "font/otf", glb: "model/gltf-binary", gltf: "model/gltf+json",
+    txt: "text/plain; charset=utf-8", xml: "application/xml" };
+  const GAME_SANDBOX = "sandbox allow-scripts allow-pointer-lock allow-popups allow-forms allow-modals allow-downloads allow-orientation-lock";
+  const gameSig = (d) => sign("game:" + d).slice(0, 22);
+  const gameToken = (id, uid, exp, h) => { const d = Buffer.from(JSON.stringify({ v: id, u: uid, e: exp, ...(h ? { h: 1 } : {}) })).toString("base64url"); return `${d}.${gameSig(d)}`; };
+  function readGameToken(t) {
+    const [d, sg] = String(t).split(".");
+    if (!d || !sg || gameSig(d) !== sg) return null;
+    try { const x = JSON.parse(Buffer.from(d, "base64url").toString()); return x.e && x.e < Date.now() ? null : x; } catch { return null; }
+  }
+  const gameUrl = (v, tok) => `/play/${tok}/${v._game.entry.split("/").map(encodeURIComponent).join("/")}`;
+
+  // сохранения HTML5-игр: localStorage в песочнице недоступен — подменяем его и пересылаем сохранения странице AnyTube
+  const SAVE_SHIM = `<script>/* AnyTube: сохранения игры */(function(){var d={},t=null;try{if(String(window.name).indexOf("anytube:")===0){d=JSON.parse(window.name.slice(8))||{};window.name=""}}catch(e){}
+function sync(){clearTimeout(t);t=setTimeout(function(){try{parent.postMessage({anytubeSave:JSON.stringify(d)},"*")}catch(e){}},400)}
+function mk(p){return{getItem:function(k){k=p+String(k);return Object.prototype.hasOwnProperty.call(d,k)?d[k]:null},setItem:function(k,v){d[p+String(k)]=String(v);if(!p)sync()},
+removeItem:function(k){delete d[p+String(k)];if(!p)sync()},clear:function(){for(var k in d)if(k.indexOf(p)===0||!p)delete d[k];if(!p)sync()},
+key:function(i){return Object.keys(d)[i]||null},get length(){return Object.keys(d).length}}}
+[["localStorage",""],["sessionStorage","\\u0000s:"]].forEach(function(n){var ok=false;try{window[n[0]].getItem("x");ok=true}catch(e){}if(!ok)try{Object.defineProperty(window,n[0],{value:mk(n[1]),configurable:true})}catch(e){}});})();</script>`;
+
+  async function pump(reader, first, res) { // поток GitHub → браузер; обрыв с любой стороны не роняет сервер
+    res.on("close", () => reader.cancel().catch(() => {}));
+    const write = async (chunk) => { if (!res.write(Buffer.from(chunk))) await new Promise((r) => { res.once("drain", r); res.once("close", r); }); };
+    try {
+      if (first) await write(first);
+      for (;;) {
+        if (res.destroyed) return;
+        const { value, done } = await reader.read();
+        if (done) break;
+        await write(value);
+      }
+      res.end();
+    } catch (e) { console.error("[game] поток прерван:", e?.cause?.code || e?.code || e?.message); res.destroy(); }
+  }
+
+  app.post("/api/game/start", async (req, res) => {
+    const body = await readBody(req);
+    const v = await findVideo(String(body.id || ""));
+    if (!v || !v._game) return res.status(404).json({ error: "Игра не найдена" });
+    const hiddenOk = isHidden(v) ? canSeeHidden(req, v) : false;
+    if (isHidden(v) && !hiddenOk) return res.status(404).json({ error: "Игра недоступна" });
+    if (!v._game.private) // бесплатная: постоянная ссылка (кэшируется браузером)
+      return res.json({ ok: true, url: gameUrl(v, gameToken(v.id, 0, hiddenOk ? Date.now() + 12 * 3600e3 : 0, hiddenOk)) });
+    const u = auth(req, res); if (!u) return;
+    const a = access(u, v);
+    if (!a.owned && !(a.timeUntil > Date.now())) return res.status(402).json({ error: "Сначала купите игру или включите игру по времени" });
+    res.json({ ok: true, url: gameUrl(v, gameToken(v.id, u.uid, Date.now() + 12 * 3600e3, hiddenOk)) });
+  });
+
+  app.get(/^\/play\/([^/]+)\/(.*)$/, async (req, res) => {
+    res.setHeader("Content-Security-Policy", GAME_SANDBOX);
+    res.setHeader("Access-Control-Allow-Origin", "*"); // у игры origin null — свои же файлы она грузит как «чужие»
+    res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    const rawSegs = (req.originalUrl || req.url).split("?")[0].split("/").slice(3);
+    const t = readGameToken(decodeURIComponent((req.originalUrl || req.url).split("/")[2] || ""));
+    if (!t) return res.status(403).send("Ссылка на игру устарела — откройте игру на AnyTube заново");
+    const v = await findVideo(t.v);
+    const g = v?._game;
+    if (!g) return res.status(404).send("Игра не найдена");
+    if (isHidden(v) && !t.h) return res.status(404).send("Игра недоступна");
+    if (g.private) {
+      const u = t.u && db.users[t.u];
+      const a = u ? access(u, v) : null;
+      if (!a || u.banned || !(a.owned || a.timeUntil > Date.now() - 90e3)) return res.status(402).send("Время игры закончилось — продлите на странице игры");
+      if (!CFG.paidToken) return res.status(503).send("Платные игры не настроены (PAID_TOKEN)");
+    }
+    let segs;
+    try { segs = rawSegs.map(decodeURIComponent); } catch { return res.status(400).send("Неверный путь"); }
+    if (!segs.length || (segs.length === 1 && !segs[0])) return redirect(res, gameUrl(v, req.params?.[0] || (req.originalUrl || req.url).split("/")[2]));
+    if (!segs[segs.length - 1]) segs[segs.length - 1] = "index.html";
+    if (segs.some((x) => !x || x === "." || x === ".." || /[\\\0/]/.test(x))) return res.status(400).send("Неверный путь");
+    const rel = [...(g.dir ? g.dir.split("/") : []), ...segs].map(encodeURIComponent).join("/");
+    const headers = { "User-Agent": "anytube" };
+    if (g.private) headers.Authorization = `token ${CFG.paidToken}`;
+    if (req.headers.range) headers.Range = req.headers.range;
+    let up = await fetch(`https://raw.githubusercontent.com/${v.owner}/${g.repo}/HEAD/${rel}`, { headers });
+    if (!up.ok && up.status !== 206) return res.status(up.status === 404 ? 404 : 502).send(up.status === 404 ? "Файл игры не найден" : `GitHub ${up.status}`);
+    let reader = up.body.getReader();
+    let { value: first } = await reader.read();
+    // файлы больше 95 МБ лежат в Git LFS: raw.githubusercontent отдаёт «указатель» — идём за самим файлом
+    if (first && first.length < 400 && Buffer.from(first).toString("latin1").startsWith("version https://git-lfs")) {
+      reader.cancel().catch(() => {});
+      up = await fetch(`https://media.githubusercontent.com/media/${v.owner}/${g.repo}/HEAD/${rel}`, { headers });
+      if (!up.ok && up.status !== 206) return res.status(502).send(`GitHub LFS ${up.status}`);
+      reader = up.body.getReader(); first = null;
+    }
+    const name = segs[segs.length - 1].toLowerCase();
+    let enc = null, inner = name;
+    if (name.endsWith(".br")) { enc = "br"; inner = name.slice(0, -3); }          // сжатые сборки Unity
+    else if (name.endsWith(".gz")) { enc = "gzip"; inner = name.slice(0, -3); }
+    const ext = inner.includes(".") ? inner.split(".").pop() : "";
+    res.statusCode = up.status;
+    res.setHeader("Content-Type", GAME_MIME[ext] || "application/octet-stream");
+    if (enc) res.setHeader("Content-Encoding", enc);
+    const cr = up.headers.get("content-range"); if (cr) res.setHeader("Content-Range", cr);
+    res.setHeader("Accept-Ranges", "bytes");
+    res.setHeader("Cache-Control", g.private ? "private, max-age=600" : "public, max-age=3600");
+    if (!enc && (ext === "html" || ext === "htm") && up.status === 200) { // HTML: вставляем сохранения
+      const bufs = first ? [Buffer.from(first)] : [];
+      for (let n = bufs[0]?.length || 0; ;) { const { value, done } = await reader.read(); if (done) break; bufs.push(Buffer.from(value)); n += value.length; if (n > 5e6) break; }
+      let html = Buffer.concat(bufs).toString("utf8");
+      const m = html.match(/<head[^>]*>/i);
+      html = m ? html.replace(m[0], m[0] + SAVE_SHIM) : SAVE_SHIM + html;
+      return res.end(html);
+    }
+    pump(reader, first, res);
+  });
+
+  // бесплатный файл (3D-модель и т.п.) через сайт — для просмотра модели прямо на странице
+  app.get("/file", async (req, res) => {
+    const v = await findVideo(String(req.query.id || ""));
+    const f = v?.files?.[Number(req.query.f) || 0];
+    if (!f) return res.status(404).send("Не найдено");
+    if (isHidden(v) && !canSeeHidden(req, v)) return res.status(404).send("Недоступно");
+    const up = await fetch(f.url, { headers: req.headers.range ? { Range: req.headers.range } : {} });
+    if (!up.ok && up.status !== 206) return res.status(502).send(`GitHub ${up.status}`);
+    const ext = (f.name || "").toLowerCase().split(".").pop();
+    res.statusCode = up.status;
+    res.setHeader("Content-Type", { glb: "model/gltf-binary", gltf: "model/gltf+json" }[ext] || "application/octet-stream");
+    res.setHeader("Content-Security-Policy", "sandbox");
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("Cache-Control", "public, max-age=3600");
+    for (const h of ["content-range"]) { const x = up.headers.get(h); if (x) res.setHeader(h, x); }
+    if (req.query.download) res.setHeader("Content-Disposition", `attachment; filename*=UTF-8''${encodeURIComponent(f.name || "file")}`);
+    pump(up.body.getReader(), null, res);
   });
 
   // сайт сам принимает приглашения в приватные репозитории anytubepaid_*
