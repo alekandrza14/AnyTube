@@ -2,6 +2,7 @@ import express from "express";
 import { Readable } from "node:stream";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { mountBux } from "./bux.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -304,6 +305,9 @@ app.get(/^\/video\/([^/]+)\/([^/]+)\/(.+)$/, async (req, res) => {
   Readable.fromWeb(upstream.body).pipe(res);
   req.on("close", () => upstream.body?.cancel?.().catch(() => {}));
 });
+
+// ─── Букс: реклама видео за деньги, заработок на просмотрах (bux.js) ───
+mountBux(app, getVideos);
 
 app.use(express.static(path.join(__dirname, "public"), { extensions: ["html"] }));
 app.get("/healthz", (_, res) => res.send("ok"));

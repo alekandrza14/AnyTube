@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Просмотр — Букс AnyTube</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header>
+  <a class="logo" href="/">Any<b>Tube</b></a>
+  <a class="btn ghost" href="/bux">← В букс</a>
+</header>
+<main class="bux" style="max-width:960px">
+  <div id="root" class="status">Готовим видео…</div>
+</main>
+<script src="/app.js"></script>
+<script>
+const R = (k) => (k / 100).toFixed(2).replace(".", ",") + " ₽";
+const post = (u, b) => fetch(u, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(b) }).then((r) => r.json());
+const root = document.getElementById("root");
+const cid = new URLSearchParams(location.search).get("c");
+
+(async () => {
+  const s = await post("/api/bux/start", { cid });
+  if (s.error) { root.innerHTML = `<div class="empty">${esc(s.error)}<br><br><a class="btn" href="/bux">К списку рекламы</a></div>`; return; }
+  root.className = "";
+  root.innerHTML = `
+    <div class="bx-timer"><div class="bx-bar"><i id="bar"></i></div>
+      <span id="tm">Осталось ${s.seconds} с</span><b class="bx-rew">+${R(s.reward)}</b></div>
+    <div class="player"><video id="vid" src="${esc(s.video.src)}" autoplay playsinline controls></video></div>
+    <h1 style="font-size:20px">${esc(s.video.title)}</h1>
+    <p class="muted">${esc(s.video.owner)} · таймер идёт, только пока видео играет и вкладка открыта</p>
+    <div id="check"></div>`;
+  const vid = document.getElementById("vid"), bar = document.getElementById("bar"), tm = document.getElementById("tm");
+  vid.play().catch(() => (tm.textContent = "Нажмите ▶, чтобы начать просмотр"));
+  let watched = 0, last = performance.now(), done = false;
+  const tick = (now) => {
+    const dt = (now - last) / 1000; last = now;
+    if (!done && document.visibilityState === "visible" && !vid.paused && !vid.ended && dt < 1.5) watched += dt;
+    if (vid.ended && !done) vid.play().catch(() => {}); // короткое видео — по кругу
+    const left = Math.max(0, Math.ceil(s.seconds - watched));
+    bar.style.width = Math.min(100, (watched / s.seconds) * 100) + "%";
+    if (!done) tm.textContent = vid.paused ? `Пауза — осталось ${left} с` : `Осталось ${left} с`;
+    if (!done && watched >= s.seconds) { done = true; ask(); }
+    requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+
+  function ask() {
+    tm.textContent = "Готово! Подтвердите просмотр";
+    const nums = [s.digit]; while (nums.length < 4) { const n = 1 + Math.floor(Math.random() * 9); if (!nums.includes(n)) nums.push(n); }
+    nums.sort(() => Math.random() - 0.5);
+    const box = document.getElementById("check");
+    box.innerHTML = `<div class="bx-box bx-check"><p>Нажмите цифру <b class="bx-digit">${s.digit}</b></p>
+      <div class="bk-row">${nums.map((n) => `<button class="btn ghost bx-num" data-n="${n}">${n}</button>`).join("")}</div></div>`;
+    box.scrollIntoView({ behavior: "smooth", block: "center" });
+    box.querySelectorAll(".bx-num").forEach((b) => (b.onclick = async () => {
+      box.querySelectorAll("button").forEach((x) => (x.disabled = true));
+      const r = await post("/api/bux/finish", { token: s.token, answer: +b.dataset.n });
+      box.innerHTML = r.ok
+        ? `<div class="bk-ok">✅ Засчитано! +${R(r.reward)} · заработано всего ${R(r.earn)}</div><a class="btn" href="/bux">Смотреть следующее видео</a>`
+        : `<div class="empty">❌ ${esc(r.error)}</div><a class="btn" href="/bux">К списку рекламы</a>`;
+    }));
+  }
+})();
+</script>
+</body>
+</html>

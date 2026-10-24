@@ -13,3 +13,26 @@ services:
         value: "10"
       - key: NODE_VERSION
         value: "20"
+      - key: SITE_URL           # адрес сайта (для входа и возврата после оплаты)
+        value: https://anytube.onrender.com
+      # ── Букс ──
+      - key: GITHUB_CLIENT_ID   # OAuth App на GitHub (вход на сайт)
+        sync: false
+      - key: GITHUB_CLIENT_SECRET
+        sync: false
+      - key: SESSION_SECRET     # Render сгенерирует сам
+        generateValue: true
+      - key: DB_REPO            # ПРИВАТНЫЙ репозиторий для базы, например alekandrza14/anytube-db
+        sync: false
+      - key: DB_TOKEN           # токен с правом записи только в DB_REPO
+        sync: false
+      - key: YOOMONEY_WALLET    # кошелёк ЮMoney, на который пополняют рекламу
+        sync: false
+      - key: YOOMONEY_SECRET    # секрет HTTP-уведомлений ЮMoney
+        sync: false
+      - key: ADMIN_LOGIN
+        value: alekandrza14
+      - key: PAYOUT_EMAIL       # куда приходят заявки на вывод
+        value: alekandrza14@gmail.com
+      - key: BUX_COMMISSION     # доля AnyTube с каждого просмотра (0.25 = 25%)
+        value: "0.25"

@@ -9,6 +9,7 @@
 <header>
   <a class="logo" href="/">Any<b>Tube</b></a>
   <form class="search" action="/"><input name="q" placeholder="Поиск видео или автора"><button>🔍</button></form>
+  <a class="btn ghost" href="/bux">💰 Букс</a>
   <a class="btn" href="/upload">＋ Загрузить</a>
 </header>
 <main class="watch">
@@ -42,6 +43,8 @@ api("/api/video?id=" + encodeURIComponent(id)).then((v) => {
       </div>
     </div>
     <p style="color:var(--muted)">Файл: ${esc(v.path)}${multi ? ` · ${parts.length} частей` : ""} · обновлено ${ago(v.updated)}</p>
+    <div class="promo"><a class="btn promo-btn" href="/bux?tab=ads&video=${encodeURIComponent(v.id)}">📢 Продвинуть в буксе</a>
+      <span class="muted">Автор может запустить рекламу видео, зрители смотрят и зарабатывают. <a href="/bux">Заработать на просмотрах →</a></span></div>
     <section class="dislikes">
       <div class="dl-head"><b>👎 Дизлайки: ${v.dislikes.total}</b>
         ${v.dislikes.total ? `<span class="muted">· средний уровень ${v.dislikes.avg} из 5</span>` : ""}</div>

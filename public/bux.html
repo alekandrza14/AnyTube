@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Букс — AnyTube</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header>
+  <a class="logo" href="/">Any<b>Tube</b></a>
+  <form class="search" action="/"><input name="q" placeholder="Поиск видео или автора"><button>🔍</button></form>
+  <span id="who"></span>
+</header>
+<main class="bux">
+  <h1>💰 Букс AnyTube</h1>
+  <div id="root" class="status">Загрузка…</div>
+</main>
+<script src="/app.js"></script>
+<script>
+const R = (k) => (k / 100).toFixed(2).replace(".", ",") + " ₽";
+const post = (u, b) => fetch(u, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(b) }).then((r) => r.json());
+const qs = new URLSearchParams(location.search);
+let ME, CONF, TAB = qs.get("tab") || "earn";
+
+async function boot() {
+  CONF = await api("/api/bux/me");
+  ME = CONF.user;
+  const root = document.getElementById("root");
+  document.getElementById("who").innerHTML = ME
+    ? `<span class="who"><img src="${esc(ME.avatar)}&s=64" alt=""> ${esc(ME.login)} ${ME.admin ? '<a class="btn ghost" href="/bux-admin">Админка</a>' : ""} <a class="btn ghost" href="/auth/logout">Выйти</a></span>`
+    : "";
+  if (!CONF.ready) { root.innerHTML = `<div class="empty">Букс временно недоступен: база не загрузилась. Попробуйте через минуту.</div>`; return; }
+  if (!ME) {
+    root.className = "";
+    root.innerHTML = `
+      <div class="bx-hero">
+        <div class="bx-card"><h2>👀 Смотрите видео, получайте деньги</h2>
+          <p>Смотрите рекламируемые видео нужное время (от 15 до 120 с) и получайте от ${R(CONF.tariffs[0].reward)} до ${R(CONF.tariffs.at(-1).reward)} за просмотр. Выводите на ЮMoney от ${R(CONF.minWithdraw)}.</p></div>
+        <div class="bx-card"><h2>📢 Продвигайте свои видео</h2>
+          <p>Пополните рекламный баланс через ЮMoney, выберите своё видео, время просмотра и число показов. Реальные люди посмотрят его на AnyTube.</p></div>
+      </div>
+      ${CONF.loginEnabled ? `<a class="btn big" href="/auth/login?back=${encodeURIComponent(location.pathname + location.search)}">Войти через GitHub</a>` : `<p class="muted">Вход ещё не настроен администратором.</p>`}
+      <p class="muted">Нужен только ваш публичный профиль GitHub, доступа к репозиториям мы не просим.</p>`;
+    return;
+  }
+  root.className = "";
+  root.innerHTML = `
+    <div class="bx-bal">
+      <div><span>Заработано</span><b id="bEarn">${R(ME.earn)}</b><small>можно вывести</small></div>
+      <div><span>Рекламный баланс</span><b id="bAd">${R(ME.ad)}</b><small>на продвижение</small></div>
+      <div><span>На выводе</span><b>${R(ME.held)}</b><small>ждёт выплаты</small></div>
+      <div><span>Просмотров</span><b>${ME.views}</b><small>всего заработано ${R(ME.earned)}</small></div>
+    </div>
+    <div class="tabs">
+      <a data-t="earn">👀 Заработать</a><a data-t="ads">📢 Реклама</a><a data-t="wallet">👛 Кошелёк</a>
+    </div>
+    <div id="tab"></div>`;
+  document.querySelectorAll(".tabs a").forEach((a) => (a.onclick = () => show(a.dataset.t)));
+  show(TAB);
+}
+
+function show(t) {
+  TAB = t;
+  document.querySelectorAll(".tabs a").forEach((a) => a.classList.toggle("on", a.dataset.t === t));
+  const u = new URL(location); u.searchParams.set("tab", t); history.replaceState(null, "", u);
+  ({ earn, ads, wallet })[t]?.();
+}
+
+// ── Заработать ──
+async function earn() {
+  const el = document.getElementById("tab");
+  el.innerHTML = `<p class="status">Ищем рекламу…</p>`;
+  const d = await api("/api/bux/tasks");
+  if (d.error) { el.innerHTML = `<p class="empty">${esc(d.error)}</p>`; return; }
+  el.innerHTML = `
+    ${d.canEarn ? "" : `<div class="note">Зарабатывать можно с GitHub-аккаунта старше ${CONF.minAccountDays} дней (защита от ботов). Рекламировать свои видео можно уже сейчас.</div>`}
+    <p class="muted">Откройте видео и смотрите, пока идёт таймер. Вкладка должна быть активной, видео не на паузе. В конце нажмите цифру, которую покажет сайт. Каждое видео можно смотреть раз в 24 часа.</p>
+    ${d.tasks.length ? `<div class="bx-tasks">${d.tasks.map((t) => `
+      <a class="bx-task" href="/bux-view?c=${encodeURIComponent(t.id)}">
+        <img src="${esc(t.avatar)}&s=64" alt="">
+        <div><b>${esc(t.title)}</b><small>${esc(t.owner)} · ${t.seconds} с</small></div>
+        <span class="bx-rew">+${R(t.reward)}</span>
+      </a>`).join("")}</div>` : `<div class="empty">Сейчас рекламы нет: всё уже просмотрено. Загляните позже!</div>`}`;
+}
+
+// ── Реклама ──
+async function ads() {
+  const el = document.getElementById("tab");
+  el.innerHTML = `<p class="status">Загрузка…</p>`;
+  const d = await api("/api/bux/campaigns");
+  const pre = qs.get("video") || "";
+  el.innerHTML = `
+    <section class="bx-box">
+      <h2>Новая реклама</h2>
+      ${d.myVideos.length ? `
+      <form class="form" id="cf">
+        <label>Ваше видео <select name="video">${d.myVideos.map((v) => `<option value="${esc(v.id)}" ${v.id === pre ? "selected" : ""}>${esc(v.title)}</option>`).join("")}</select></label>
+        <label>Время просмотра <select name="seconds">${CONF.tariffs.map((t) => `<option value="${t.seconds}" data-p="${t.price}">${t.seconds} с — ${R(t.price)} за просмотр</option>`).join("")}</select></label>
+        <label>Сколько просмотров <input name="count" type="number" min="10" max="100000" value="100"></label>
+        <p>Итого: <b id="cost"></b> · на рекламном балансе ${R(ME.ad)}</p>
+        <div class="bk-row"><button class="btn" type="submit">Запустить рекламу</button>
+          <button class="btn ghost" type="button" onclick="show('wallet')">Пополнить баланс</button></div>
+        <p class="muted" id="cmsg"></p>
+      </form>` : `<p class="muted">У вас пока нет видео на AnyTube (рекламировать можно только свои видео из аккаунта <b>${esc(ME.login)}</b>). <a href="/upload">Как загрузить видео</a></p>`}
+    </section>
+    <section class="bx-box">
+      <h2>Мои рекламные кампании</h2>
+      ${d.campaigns.length ? `<table class="bx-table"><tr><th>Видео</th><th>Время</th><th>Просмотров</th><th>Осталось</th><th>Статус</th><th></th></tr>
+        ${d.campaigns.map((c) => `<tr><td><a href="/watch?v=${encodeURIComponent(c.video)}">${esc(c.video.split("/").pop())}</a></td><td>${c.seconds} с</td>
+          <td>${c.views} из ${Math.round(c.budget / c.price)}</td><td>${R(c.left)}</td>
+          <td>${{ active: "🟢 идёт", done: "✅ завершена", stopped: "⏹ остановлена" }[c.status]}</td>
+          <td>${c.status === "active" ? `<button class="btn ghost sm" data-stop="${c.id}">Остановить</button>` : ""}</td></tr>`).join("")}</table>`
+        : `<p class="muted">Кампаний пока нет.</p>`}
+      <p class="muted">При остановке неизрасходованные деньги возвращаются на рекламный баланс.</p>
+    </section>`;
+  const f = document.getElementById("cf");
+  if (f) {
+    const calc = () => { const p = +f.seconds.selectedOptions[0].dataset.p; document.getElementById("cost").textContent = R(p * Math.max(0, Math.floor(+f.count.value || 0))); };
+    f.oninput = calc; calc();
+    f.onsubmit = async (e) => {
+      e.preventDefault();
+      const r = await post("/api/bux/campaigns", { video: f.video.value, seconds: +f.seconds.value, count: +f.count.value });
+      if (r.error) return (document.getElementById("cmsg").textContent = "❌ " + r.error);
+      boot();
+    };
+  }
+  el.querySelectorAll("[data-stop]").forEach((b) => (b.onclick = async () => { await post("/api/bux/campaigns/stop", { cid: b.dataset.stop }); boot(); }));
+}
+
+// ── Кошелёк ──
+async function wallet() {
+  const el = document.getElementById("tab");
+  const h = await api("/api/bux/history");
+  const names = { view: "👀 Просмотр", campaign: "📢 Реклама", refund: "↩ Возврат", "to-ad": "🔁 На рекламу", topup: "💳 Пополнение", withdraw: "📤 Вывод", paid: "✅ Выплачено", rejected: "↩ Отклонено", admin: "🛠 Администратор" };
+  el.innerHTML = `
+    ${qs.get("topup") ? `<div class="bk-ok">✅ Спасибо! Деньги зачислятся на рекламный баланс, как только ЮMoney подтвердит перевод (обычно за минуту).</div>` : ""}
+    <div class="bx-grid">
+      <section class="bx-box">
+        <h2>💳 Пополнить рекламный баланс</h2>
+        ${CONF.topupEnabled ? `<form class="form" action="/bux/topup" method="get">
+          <label>Сумма, ₽ <input name="sum" type="number" min="${CONF.minTopup / 100}" max="15000" value="100"></label>
+          <label>Способ <select name="type"><option value="AC">Банковской картой</option><option value="PC">Кошельком ЮMoney</option></select></label>
+          <button class="btn">Оплатить через ЮMoney</button></form>
+          <p class="muted">Зачисляется автоматически. ЮMoney может взять комиссию, на баланс придёт сумма после неё.</p>`
+        : `<p class="muted">Автоматическое пополнение пока не настроено. Чтобы пополнить, напишите на ${esc(CONF.payoutEmail)}.</p>`}
+      </section>
+      <section class="bx-box">
+        <h2>🔁 Заработанное → на рекламу</h2>
+        <form class="form" id="tf"><label>Сумма, ₽ <input name="amount" type="number" step="0.01" min="0.01" max="${ME.earn / 100}" value="${(ME.earn / 100).toFixed(2)}"></label>
+          <button class="btn ghost">Перевести</button><p class="muted" id="tmsg"></p></form>
+      </section>
+    </div>
+    <section class="bx-box" id="wd">
+      <h2>📤 Вывести заработанное на ЮMoney</h2>
+      <p class="muted">Минимум ${R(CONF.minWithdraw)}. Сумма замораживается, а заявка с обоснованием уходит администратору на ${esc(CONF.payoutEmail)}. После проверки деньги переводятся на ваш кошелёк.</p>
+      <form class="form" id="wf">
+        <label>Сумма, ₽ <input name="amount" type="number" step="0.01" min="${CONF.minWithdraw / 100}" max="${ME.earn / 100}" value="${(ME.earn / 100).toFixed(2)}" required></label>
+        <label>Номер кошелька ЮMoney <input name="wallet" inputmode="numeric" placeholder="4100…" required></label>
+        <label>Обоснование выполненной работы
+          <small>Что вы делали: сколько видео посмотрели, сколько времени это заняло. Статистика добавится сама.</small>
+          <textarea name="text" required>Смотрел(а) рекламные видео на AnyTube: ${ME.views} просмотров, заработано ${R(ME.earned)}.</textarea></label>
+        <label>Почта для ответа <input name="email" type="email"></label>
+        <button class="btn">Отправить заявку на вывод</button>
+        <p class="muted" id="wmsg"></p>
+      </form>
+    </section>
+    <section class="bx-box">
+      <h2>Заявки на вывод</h2>
+      ${h.withdrawals.length ? `<table class="bx-table"><tr><th>Дата</th><th>Сумма</th><th>Кошелёк</th><th>Статус</th><th></th></tr>
+        ${h.withdrawals.map((w) => `<tr><td>${new Date(w.created).toLocaleString("ru")}</td><td>${R(w.amount)}</td><td>${esc(w.wallet)}</td>
+          <td>${{ pending: "⏳ на проверке", paid: "✅ выплачено", rejected: "❌ отклонено" }[w.status]}</td>
+          <td>${w.status === "pending" ? `<a class="btn ghost sm" href="${mailto(w)}">✉ Письмо</a>` : ""}</td></tr>`).join("")}</table>` : `<p class="muted">Заявок нет.</p>`}
+    </section>
+    <section class="bx-box"><h2>История</h2>
+      ${h.ops.length ? `<table class="bx-table">${h.ops.map((o) => `<tr><td>${new Date(o.t).toLocaleString("ru")}</td><td>${names[o.type] || o.type}</td>
+        <td class="${o.amount >= 0 ? "plus" : "minus"}">${o.amount ? (o.amount > 0 ? "+" : "") + R(o.amount) : ""}</td><td class="muted">${esc(o.note || "")}</td></tr>`).join("")}</table>` : `<p class="muted">Пока пусто.</p>`}
+    </section>`;
+  const tf = document.getElementById("tf");
+  tf.onsubmit = async (e) => { e.preventDefault(); const r = await post("/api/bux/to-ad", { amount: tf.amount.value }); if (r.error) document.getElementById("tmsg").textContent = "❌ " + r.error; else boot(); };
+  const wf = document.getElementById("wf");
+  wf.onsubmit = async (e) => {
+    e.preventDefault();
+    const r = await post("/api/bux/withdraw", Object.fromEntries(new FormData(wf)));
+    if (r.error) return (document.getElementById("wmsg").textContent = "❌ " + r.error);
+    location.href = mailto(r.withdrawal); // открываем письмо с заявкой
+    setTimeout(boot, 800);
+  };
+}
+
+function mailto(w) {
+  const subject = `AnyTube Букс: заявка на вывод ${w.id} — ${w.login} — ${R(w.amount)}`;
+  const body = [
+    `Заявка на вывод №${w.id}`, "",
+    `Логин GitHub: ${w.login}`, `Сумма: ${R(w.amount)}`, `Кошелёк ЮMoney: ${w.wallet}`, w.email ? `Почта для ответа: ${w.email}` : "",
+    `Статистика: ${w.views} просмотров, всего заработано ${R(w.earned)}`, "",
+    "Обоснование выполненной работы:", w.text, "",
+    `Проверить и подтвердить: ${location.origin}/bux-admin`,
+  ].filter((x) => x !== "").join("\n");
+  return `mailto:${CONF.payoutEmail}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+}
+boot();
+</script>
+</body>
+</html>

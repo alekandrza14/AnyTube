@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Админка букса — AnyTube</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header>
+  <a class="logo" href="/">Any<b>Tube</b></a>
+  <a class="btn ghost" href="/bux">← В букс</a>
+</header>
+<main class="bux">
+  <h1>🛠 Админка букса</h1>
+  <div id="root" class="status">Загрузка…</div>
+</main>
+<script src="/app.js"></script>
+<script>
+const R = (k) => (k / 100).toFixed(2).replace(".", ",") + " ₽";
+const post = (u, b) => fetch(u, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(b) }).then((r) => r.json());
+const dt = (t) => new Date(t).toLocaleString("ru");
+async function load() {
+  const root = document.getElementById("root");
+  const d = await api("/api/bux/admin");
+  if (d.error) { root.innerHTML = `<div class="empty">${esc(d.error)}<br><br><a class="btn" href="/auth/login?back=/bux-admin">Войти через GitHub</a></div>`; return; }
+  const t = d.totals;
+  root.className = "";
+  root.innerHTML = `
+    <p class="muted">Хранилище базы: <b>${esc(d.storage)}</b></p>
+    <div class="bx-bal">
+      <div><span>Пополнено через ЮMoney</span><b>${R(t.topups)}</b></div>
+      <div><span>Комиссия AnyTube</span><b>${R(t.income)}</b></div>
+      <div><span>Заработали зрители</span><b>${R(t.viewsPaid)}</b></div>
+      <div><span>Выплачено</span><b>${R(t.paid)}</b></div>
+      <div><span>Ждут выплаты</span><b>${R(t.held)}</b></div>
+      <div><span>Балансы: заработок / реклама</span><b>${R(t.earn)} / ${R(t.ad)}</b></div>
+      <div><span>В активной рекламе</span><b>${R(t.active)}</b></div>
+      <div><span>Пользователей</span><b>${t.users}</b></div>
+    </div>
+
+    <section class="bx-box"><h2>📤 Заявки на вывод</h2>
+      <p class="muted">Переведите деньги на кошелёк в приложении ЮMoney, затем нажмите «Выплачено». «Отклонить» вернёт сумму пользователю.</p>
+      ${d.withdrawals.length ? `<table class="bx-table"><tr><th>Дата</th><th>Логин</th><th>Сумма</th><th>Кошелёк</th><th>Просмотров</th><th>Обоснование</th><th></th></tr>
+      ${d.withdrawals.map((w) => `<tr><td>${dt(w.created)}</td><td><a href="https://github.com/${esc(w.login)}" target="_blank">${esc(w.login)}</a></td>
+        <td><b>${R(w.amount)}</b></td><td><code>${esc(w.wallet)}</code></td><td>${w.views}</td><td class="bx-text">${esc(w.text)}${w.email ? `<br><span class="muted">${esc(w.email)}</span>` : ""}</td>
+        <td>${w.status === "pending" ? `<button class="btn sm" data-w="${w.id}" data-a="paid">Выплачено</button> <button class="btn ghost sm" data-w="${w.id}" data-a="reject">Отклонить</button>`
+          : { paid: "✅ выплачено", rejected: "❌ отклонено" }[w.status]}</td></tr>`).join("")}</table>` : `<p class="muted">Заявок нет.</p>`}
+    </section>
+
+    <section class="bx-box"><h2>💳 Ручное начисление</h2>
+      <p class="muted">Если пополнение пришло без метки или уведомления ЮMoney не настроены. Минус — списание.</p>
+      <form class="form bx-inline" id="cr">
+        <input name="login" placeholder="логин GitHub" required>
+        <input name="amount" type="number" step="0.01" placeholder="сумма, ₽" required>
+        <select name="balance"><option value="ad">на рекламный</option><option value="earn">на заработок</option></select>
+        <input name="note" placeholder="комментарий (номер операции ЮMoney)">
+        <button class="btn">Начислить</button><span class="muted" id="crm"></span>
+      </form>
+    </section>
+
+    <section class="bx-box"><h2>📢 Рекламные кампании</h2>
+      ${d.campaigns.length ? `<table class="bx-table"><tr><th>Дата</th><th>Логин</th><th>Видео</th><th>Время</th><th>Просмотров</th><th>Осталось</th><th>Статус</th><th></th></tr>
+      ${d.campaigns.map((c) => `<tr><td>${dt(c.created)}</td><td>${esc(c.login || "")}</td><td><a href="/watch?v=${encodeURIComponent(c.video)}">${esc(c.video)}</a></td><td>${c.seconds} с</td>
+        <td>${c.views}</td><td>${R(c.left)}</td><td>${c.status}</td><td>${c.status === "active" ? `<button class="btn ghost sm" data-stop="${c.id}">Остановить</button>` : ""}</td></tr>`).join("")}</table>` : `<p class="muted">Кампаний нет.</p>`}
+    </section>
+
+    <section class="bx-box"><h2>👥 Пользователи</h2>
+      <table class="bx-table"><tr><th>Логин</th><th>Заработок</th><th>Реклама</th><th>На выводе</th><th>Просмотров</th><th>Заработано всего</th><th></th></tr>
+      ${d.users.map((u) => `<tr><td><a href="https://github.com/${esc(u.login)}" target="_blank">${esc(u.login)}</a></td><td>${R(u.earn)}</td><td>${R(u.ad)}</td><td>${R(u.held)}</td>
+        <td>${u.views}</td><td>${R(u.earned)}</td><td><button class="btn ghost sm" data-ban="${u.uid}">Заблокировать</button></td></tr>`).join("")}</table>
+    </section>`;
+  root.querySelectorAll("[data-w]").forEach((b) => (b.onclick = async () => {
+    if (b.dataset.a === "paid" && !confirm("Вы уже перевели деньги в ЮMoney?")) return;
+    const r = await post("/api/bux/admin/withdrawal", { wid: b.dataset.w, action: b.dataset.a });
+    r.error ? alert(r.error) : load();
+  }));
+  root.querySelectorAll("[data-stop]").forEach((b) => (b.onclick = async () => { await post("/api/bux/campaigns/stop", { cid: b.dataset.stop }); load(); }));
+  root.querySelectorAll("[data-ban]").forEach((b) => (b.onclick = async () => { if (confirm("Заблокировать пользователя?")) { await post("/api/bux/admin/ban", { uid: b.dataset.ban, ban: true }); load(); } }));
+  const cr = document.getElementById("cr");
+  cr.onsubmit = async (e) => { e.preventDefault(); const r = await post("/api/bux/admin/credit", Object.fromEntries(new FormData(cr)));
+    document.getElementById("crm").textContent = r.error ? "❌ " + r.error : "✅ Начислено"; if (!r.error) setTimeout(load, 700); };
+}
+load();
+</script>
+</body>
+</html>

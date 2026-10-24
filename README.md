@@ -25,7 +25,38 @@ npm start
 |---|---|---|
 | `GITHUB_TOKEN` | — | токен GitHub (очень желателен) |
 | `CACHE_MINUTES` | 10 | как часто обновлять список видео |
-| `MAX_SEARCH_PAGES` | 5 | страниц поиска по 100 репо |
+| `MAX_SEARCH_PAGES` | 10 | страниц поиска по 100 репо |
+| `SITE_URL` | — | адрес сайта, например https://anytube.onrender.com |
+
+## 💰 Букс: настройка
+Букс — реклама видео за деньги и заработок на просмотрах (как aviso.bz): `/bux`, админка `/bux-admin`.
+
+1. **База (обязательно!)** Создайте **приватный** репозиторий, например `anytube-db` (пустой).
+   Токен: GitHub → Settings → Developer settings → Fine-grained tokens → доступ **только к anytube-db**, Permissions → Contents: **Read and write**.
+   На Render: `DB_REPO=alekandrza14/anytube-db`, `DB_TOKEN=github_pat_…`.
+   Без этого балансы хранятся в файле, который бесплатный Render стирает при каждом перезапуске.
+2. **Вход через GitHub.** GitHub → Settings → Developer settings → **OAuth Apps → New OAuth App**:
+   Homepage URL `https://anytube.onrender.com`, Authorization callback URL `https://anytube.onrender.com/auth/callback`.
+   Client ID → `GITHUB_CLIENT_ID`, Generate a new client secret → `GITHUB_CLIENT_SECRET`.
+3. **Пополнение через ЮMoney.** Номер кошелька → `YOOMONEY_WALLET`.
+   В ЮMoney откройте настройки HTTP-уведомлений: адрес `https://anytube.onrender.com/api/yoomoney/notify`, секрет → `YOOMONEY_SECRET`.
+   Нажмите «Протестировать»: в логах Render должно появиться `тестовое уведомление ЮMoney получено, подпись верна`.
+4. `SESSION_SECRET` Render создаст сам (если не через Blueprint — впишите любую длинную случайную строку).
+
+| Переменная | По умолчанию | Что делает |
+|---|---|---|
+| `ADMIN_LOGIN` | alekandrza14 | GitHub-логин администратора |
+| `PAYOUT_EMAIL` | alekandrza14@gmail.com | куда приходят заявки на вывод |
+| `BUX_COMMISSION` | 0.25 | доля AnyTube с просмотра (зритель получает 75%) |
+| `BUX_MIN_WITHDRAW` | 10 | минимум для вывода, ₽ |
+| `BUX_MIN_TOPUP` | 10 | минимум пополнения, ₽ |
+| `BUX_MIN_ACCOUNT_DAYS` | 7 | минимальный возраст GitHub-аккаунта, чтобы зарабатывать |
+
+**Тарифы** (цена просмотра для рекламодателя, зритель получает 75%): 15 с — 0,10 ₽; 30 с — 0,18 ₽; 45 с — 0,25 ₽; 60 с — 0,30 ₽; 90 с — 0,40 ₽; 120 с — 0,50 ₽. Меняются в `bux.js` (`TARIFFS`).
+
+**Защита от накрутки:** вход только через GitHub, аккаунт старше 7 дней; одно видео — раз в 24 часа на человека и на IP; таймер считает время, только пока видео играет во вкладке, сервер сверяет реальное время; в конце нужно нажать показанную цифру; один просмотр одновременно; блокировка пользователей в админке.
+
+**Вывод:** зритель заполняет заявку с обоснованием, сумма замораживается, открывается письмо на `PAYOUT_EMAIL`. Администратор переводит деньги в приложении ЮMoney и нажимает «Выплачено» в `/bux-admin` (или «Отклонить» — деньги вернутся пользователю).
 
 ## Ограничения
 - Бесплатный Render засыпает после 15 минут без запросов; первый заход после сна — ~30–60 с.
