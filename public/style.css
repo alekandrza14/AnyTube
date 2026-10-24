@@ -218,3 +218,6 @@ main{max-width:1400px;margin:0 auto;padding:24px 20px}
 .mod-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:12px}
 .mod-video{display:grid;gap:8px;border-left-color:#d9963b}
 .mod-video video{width:100%;aspect-ratio:16/9;background:#000;border-radius:8px}
+
+.like-wrap{display:inline-grid;justify-items:center;gap:2px}
+.like-ip{font-size:11px;color:var(--muted);white-space:nowrap}

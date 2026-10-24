@@ -805,9 +805,8 @@ export function mountBux(app, getVideos) {
 
   // ═══════════════ ЛАЙКИ (без входа через GitHub) ═══════════════
   const ipKey = (req) => crypto.createHmac("sha256", CFG.sessionSecret).update(ipOf(req) || "?").digest("hex").slice(0, 16);
-  function visitorKey(req, res) {
-    const u = loaded ? sessionUser(req) : null;
-    if (u) return `u:${u.uid}`;
+  // Плюсик узнаём и по браузеру (cookie at_v), и по аккаунту (если вошёл): так он не «пропадает» после входа через GitHub
+  function cookieKey(req, res) {
     let vid = getCookie(req, "at_v");
     if (!vid || !/^[a-f0-9]{24}$/.test(vid)) {
       vid = crypto.randomBytes(12).toString("hex");
@@ -815,34 +814,41 @@ export function mountBux(app, getVideos) {
     }
     return `v:${vid}`;
   }
+  function myKeys(req, res) {
+    const keys = [cookieKey(req, res)];
+    const u = loaded ? sessionUser(req) : null;
+    if (u) keys.push(`u:${u.uid}`);
+    return keys;
+  }
   const likeRate = new Map();
   app.get("/api/like", (req, res) => {
     if (!guard(res)) return;
-    const id = String(req.query.id || ""), key = visitorKey(req, res);
-    res.json({ count: likesOf(id), liked: !!db.likes[id]?.by?.[key] });
+    const id = String(req.query.id || ""), keys = myKeys(req, res);
+    res.json({ count: likesOf(id), liked: keys.some((k) => db.likes[id]?.by?.[k]), ip: ipOf(req) });
   });
   app.post("/api/like", async (req, res) => {
     if (!guard(res)) return;
     const id = String((await readBody(req)).id || "");
     const v = (await getVideos()).videos.find((x) => x.id === id);
     if (!v) return res.status(404).json({ error: "Видео не найдено" });
-    const key = visitorKey(req, res), ipk = ipKey(req);
+    const keys = myKeys(req, res), ipk = ipKey(req), ip = ipOf(req);
     const L = db.likes[id];
-    if (L?.by?.[key]) { // повторное нажатие — убрать лайк
-      delete L.by[key]; L.n = Math.max(0, L.n - 1);
-      if (db.likeIp[`${ipk}:${id}`] === key) delete db.likeIp[`${ipk}:${id}`];
+    const mine = keys.filter((k) => L?.by?.[k]);
+    if (mine.length) { // повторное нажатие — убрать мой плюсик (под любым из моих ключей)
+      for (const k of mine) { delete L.by[k]; L.n = Math.max(0, L.n - 1); }
+      if (keys.includes(db.likeIp[`${ipk}:${id}`])) delete db.likeIp[`${ipk}:${id}`];
       save();
-      return res.json({ count: L.n, liked: false });
+      return res.json({ count: L.n, liked: false, ip });
     }
     const other = db.likeIp[`${ipk}:${id}`];
-    if (other && other !== key && db.likes[id]?.by?.[other]) return res.status(429).json({ error: "С этого интернета это видео уже лайкнули" });
+    if (other && !keys.includes(other) && db.likes[id]?.by?.[other]) return res.status(429).json({ error: "С этого интернета это видео уже отметили плюсиком", ip });
     const r = likeRate.get(ipk) || { n: 0, t: Date.now() };
     if (Date.now() - r.t > 3600e3) { r.n = 0; r.t = Date.now(); }
-    if (++r.n > 60) return res.status(429).json({ error: "Слишком много лайков — попробуйте через час" });
+    if (++r.n > 60) return res.status(429).json({ error: "Слишком много плюсиков — попробуйте через час", ip });
     likeRate.set(ipk, r);
-    addLike(id, key, ipk);
+    addLike(id, keys[0], ipk);
     save();
-    res.json({ count: likesOf(id), liked: true });
+    res.json({ count: likesOf(id), liked: true, ip });
   });
   async function createLikeCampaign(u, b, res) {
     const count = Math.floor(Number(b.count));
