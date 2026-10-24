@@ -21,6 +21,7 @@ const CFG = {
   minTopup: Math.round(Number(env("BUX_MIN_TOPUP", "10")) * 100),
   minAccountDays: Number(env("BUX_MIN_ACCOUNT_DAYS", "7")),
   dislikePrice: Math.round(Number(env("BUX_DISLIKE_PRICE", "5")) * 100), // цена одного дизлайка для заказчика, коп.
+  likePrice: Math.round(Number(env("BUX_LIKE_PRICE", "2")) * 100),       // цена одного лайка для заказчика, коп.
   ghToken: env("GITHUB_TOKEN").replace(/^Bearer\s+/i, ""),
   paidToken: env("PAID_TOKEN"),      // classic-токен аккаунта сайта с правом repo: читает приватные anytubepaid_*
   saleCommission: Math.min(0.9, Math.max(0, Number(env("SALE_COMMISSION", "0.37")))),
@@ -43,7 +44,7 @@ const rub = (k) => (k / 100).toFixed(2);
 
 // ─────────────── хранилище ───────────────
 const EMPTY = () => ({ v: 1, seq: 1, users: {}, campaigns: {}, views: {}, ipViews: {}, withdrawals: {}, topups: {}, ops: [],
-  purchases: {}, timepass: {}, sbp: {}, dislikeDone: {}, hidden: {} });
+  purchases: {}, timepass: {}, sbp: {}, dislikeDone: {}, hidden: {}, likes: {}, likeIp: {}, likeDone: {} });
 let db = EMPTY();
 let dbSha = null, dirty = false, saving = null, loaded = false;
 const LOCAL = path.join(process.cwd(), "data", "db.json");
@@ -153,6 +154,15 @@ async function readBody(req, limit = 200_000) {
 const rfc3986 = (v) => encodeURIComponent(v).replace(/[!'()*]/g, (c) => "%" + c.charCodeAt(0).toString(16).toUpperCase());
 // скрытые администратором видео (дубли, перезаливы, нарушения)
 export function isHidden(v) { return !!(db.hidden && db.hidden[v.id]); }
+// лайки AnyTube (вместо звёзд GitHub): хранятся в базе сайта
+export function likesOf(id) { return (db.likes && db.likes[id] && db.likes[id].n) || 0; }
+function addLike(vid, key, ipk) {
+  const L = (db.likes[vid] ||= { n: 0, by: {} });
+  if (L.by[key]) return false;
+  L.by[key] = Date.now(); L.n++;
+  if (ipk) db.likeIp[`${ipk}:${vid}`] = key;
+  return true;
+}
 
 export function yoomoneySign(params, secret) {
   const str = Object.keys(params).filter((k) => k !== "sign").sort()
@@ -228,7 +238,9 @@ export function mountBux(app, getVideos) {
       .filter((c) => c.status === "active" && c.left >= c.price && c.uid !== u.uid && byId.has(c.video) && !isHidden(byId.get(c.video)))
       .filter((c) => c.type === "dislike"
         ? byId.get(c.video).owner.toLowerCase() !== me && !db.dislikeDone[`${u.uid}:${c.video}`]   // себе дизлайк не засчитывается; одно видео — один раз
-        : !(now - (db.views[`${u.uid}:${c.id}`] || 0) < DAY))
+        : c.type === "like"
+          ? byId.get(c.video).owner.toLowerCase() !== me && !db.likeDone[`${u.uid}:${c.video}`] && !db.likes[c.video]?.by?.[`u:${u.uid}`]
+          : !(now - (db.views[`${u.uid}:${c.id}`] || 0) < DAY))
       .sort((a, b) => b.reward - a.reward)
       .map((c) => { const v = byId.get(c.video); return { id: c.id, type: c.type || "view", seconds: c.seconds, level: c.level, levelLabel: DISLIKE_LEVELS[c.level],
         reward: c.reward, title: v.title, owner: v.owner, avatar: v.avatar, video: v.id }; });
@@ -243,6 +255,7 @@ export function mountBux(app, getVideos) {
     if (!c || c.status !== "active" || c.left < c.price || c.type === "dislike") return res.status(404).json({ error: "Эта реклама уже закончилась" });
     if (c.uid === u.uid) return res.status(400).json({ error: "Свою рекламу смотреть за деньги нельзя" });
     if (Date.now() - (db.views[`${u.uid}:${cid}`] || 0) < DAY) return res.status(429).json({ error: "Это видео вы уже смотрели сегодня" });
+    if (c.type === "like" && (db.likeDone[`${u.uid}:${c.video}`] || db.likes[c.video]?.by?.[`u:${u.uid}`])) return res.status(400).json({ error: "Вы уже лайкнули это видео" });
     for (const [t, s] of sessions) if (s.uid === u.uid || Date.now() - s.start > 30 * 60 * 1000) sessions.delete(t); // одно окно за раз
     const { videos } = await getVideos();
     const v = videos.find((x) => x.id === c.video);
@@ -273,9 +286,13 @@ export function mountBux(app, getVideos) {
     db.views[`${u.uid}:${c.id}`] = Date.now();
     if (s.ip) db.ipViews[ipKey] = Date.now();
     if (c.left < c.price) { c.status = "done"; }
-    op(u.uid, "view", r, `просмотр ${c.id}`);
+    if (c.type === "like") {
+      addLike(c.video, `u:${u.uid}`, null);
+      db.likeDone[`${u.uid}:${c.video}`] = Date.now();
+      op(u.uid, "like", r, `лайк ${c.id}`);
+    } else op(u.uid, "view", r, `просмотр ${c.id}`);
     save();
-    res.json({ ok: true, reward: r, earn: u.earn });
+    res.json({ ok: true, reward: r, earn: u.earn, liked: c.type === "like" });
   });
 
   // ── реклама ──
@@ -290,6 +307,7 @@ export function mountBux(app, getVideos) {
     const u = auth(req, res); if (!u) return;
     const b = await readBody(req);
     if (b.type === "dislike") return createDislikeCampaign(u, b, res);
+    if (b.type === "like") return createLikeCampaign(u, b, res);
     const seconds = Number(b.seconds), count = Math.floor(Number(b.count));
     const price = TARIFFS[seconds];
     if (!price) return res.status(400).json({ error: "Неверное время просмотра" });
@@ -745,4 +763,62 @@ export function mountBux(app, getVideos) {
     const hidden = Object.entries(db.hidden || {}).map(([vid, h]) => ({ id: vid, ...h }));
     res.json({ dups, hidden });
   });
+
+  // ═══════════════ ЛАЙКИ (без входа через GitHub) ═══════════════
+  const ipKey = (req) => crypto.createHmac("sha256", CFG.sessionSecret).update(ipOf(req) || "?").digest("hex").slice(0, 16);
+  function visitorKey(req, res) {
+    const u = loaded ? sessionUser(req) : null;
+    if (u) return `u:${u.uid}`;
+    let vid = getCookie(req, "at_v");
+    if (!vid || !/^[a-f0-9]{24}$/.test(vid)) {
+      vid = crypto.randomBytes(12).toString("hex");
+      res.setHeader("Set-Cookie", `at_v=${vid}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${5 * 365 * 86400}${(CFG.site || "").startsWith("https") ? "; Secure" : ""}`);
+    }
+    return `v:${vid}`;
+  }
+  const likeRate = new Map();
+  app.get("/api/like", (req, res) => {
+    if (!guard(res)) return;
+    const id = String(req.query.id || ""), key = visitorKey(req, res);
+    res.json({ count: likesOf(id), liked: !!db.likes[id]?.by?.[key] });
+  });
+  app.post("/api/like", async (req, res) => {
+    if (!guard(res)) return;
+    const id = String((await readBody(req)).id || "");
+    const v = (await getVideos()).videos.find((x) => x.id === id);
+    if (!v) return res.status(404).json({ error: "Видео не найдено" });
+    const key = visitorKey(req, res), ipk = ipKey(req);
+    const L = db.likes[id];
+    if (L?.by?.[key]) { // повторное нажатие — убрать лайк
+      delete L.by[key]; L.n = Math.max(0, L.n - 1);
+      if (db.likeIp[`${ipk}:${id}`] === key) delete db.likeIp[`${ipk}:${id}`];
+      save();
+      return res.json({ count: L.n, liked: false });
+    }
+    const other = db.likeIp[`${ipk}:${id}`];
+    if (other && other !== key && db.likes[id]?.by?.[other]) return res.status(429).json({ error: "С этого интернета это видео уже лайкнули" });
+    const r = likeRate.get(ipk) || { n: 0, t: Date.now() };
+    if (Date.now() - r.t > 3600e3) { r.n = 0; r.t = Date.now(); }
+    if (++r.n > 60) return res.status(429).json({ error: "Слишком много лайков — попробуйте через час" });
+    likeRate.set(ipk, r);
+    addLike(id, key, ipk);
+    save();
+    res.json({ count: likesOf(id), liked: true });
+  });
+  async function createLikeCampaign(u, b, res) {
+    const count = Math.floor(Number(b.count));
+    if (!(count >= 1 && count <= 10000)) return res.status(400).json({ error: "Лайков: от 1 до 10 000" });
+    const { videos } = await getVideos();
+    const v = videos.find((x) => x.id === videoIdFrom(b.video));
+    if (!v) return res.status(404).json({ error: "Видео не найдено на AnyTube — вставьте ссылку со страницы видео" });
+    const price = CFG.likePrice, cost = price * count;
+    if (u.ad < cost) return res.status(402).json({ error: `Не хватает ${rub(cost - u.ad)} ₽ на пополненном балансе` });
+    u.ad -= cost;
+    const c = { id: id("l"), type: "like", uid: u.uid, video: v.id, seconds: 15, price, reward: reward(price), budget: cost, left: cost, views: 0, status: "active", created: Date.now() };
+    db.campaigns[c.id] = c;
+    op(u.uid, "campaign", -cost, `лайки ${c.id}: ${count} шт.`);
+    await save(true);
+    res.json({ ok: true, campaign: c, ad: u.ad });
+  }
+  app.get("/api/bux/like/info", (req, res) => res.json({ price: CFG.likePrice, reward: reward(CFG.likePrice) }));
 }

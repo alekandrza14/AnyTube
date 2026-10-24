@@ -2,7 +2,7 @@ import express from "express";
 import { Readable } from "node:stream";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { mountBux, isHidden } from "./bux.js";
+import { mountBux, isHidden, likesOf } from "./bux.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -35,7 +35,8 @@ const gh = async (url) => {
 };
 
 // Топ: больше звёзд — выше; при равенстве звёзд — свежее выше
-const byStars = (a, b) => b.stars - a.stars || new Date(b.updated) - new Date(a.updated);
+// Топ: больше лайков AnyTube — выше; при равенстве — свежее выше (звёзды GitHub больше не учитываются)
+const byStars = (a, b) => likesOf(b.id) - likesOf(a.id) || new Date(b.updated) - new Date(a.updated);
 const byNew = (a, b) => new Date(b.updated) - new Date(a.updated);
 
 let cache = { at: 0, videos: [], files: new Map(), error: null };
@@ -264,7 +265,7 @@ app.get("/api/videos", async (req, res) => {
   if (kind) list = list.filter((v) => v.kind === kind);
   if (q) list = list.filter((v) => `${v.title} ${v.repoTitle} ${v.owner} ${v.path}`.toLowerCase().includes(q));
   list = [...list].sort(sort === "new" ? byNew : byStars)
-    .map(({ comments, parts, _desc, _paid, dislikes, ...v }) => ({ ...v, partCount: parts ? parts.length : 1,
+    .map(({ comments, parts, _desc, _paid, dislikes, ...v }) => ({ ...v, likes: likesOf(v.id), partCount: parts ? parts.length : 1,
       commentCount: (comments || []).length, dislikeCount: dislikes ? dislikes.total : 0, dislikeAvg: dislikes ? dislikes.avg : 0 })); // в ленте только числа
   res.json({ updated: at, error: error || (tokenBad ? "GITHUB_TOKEN неверный, сайт работает без него (лимит 60 запросов/час)" : null), sort, count: list.length, videos: list });
 });
@@ -275,6 +276,7 @@ app.get("/api/video", async (req, res) => {
   if (!v) return res.status(404).json({ error: "Видео не найдено" });
   const { _desc, _paid, ...pub } = v;
   pub.hidden = isHidden(v);
+  pub.likes = likesOf(v.id);
   res.json({ ...pub, dislikeLabels: DISLIKE_LABELS });
 });
 

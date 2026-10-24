@@ -42,7 +42,8 @@ api("/api/video?id=" + encodeURIComponent(id)).then((v) => {
         <div><b>${esc(v.owner)}</b><br><span style="color:var(--muted)">${esc(v.repo)}</span></div></a>
       <div style="display:flex;gap:8px">
         <a class="btn" id="dl" href="${esc(parts[0].src)}?download=1">⬇ Скачать${v.trailer ? " трейлер" : v.kind === "wallpaper" && v.sale ? " превью" : multi ? " часть 1" : ""}</a>
-        <a class="btn ghost" href="${esc(v.repoUrl)}" target="_blank" rel="noopener">GitHub ★ ${v.stars}</a>
+        <button class="btn like-btn" id="likeBtn">❤ <span id="likeN">${v.likes || 0}</span></button>
+        <a class="btn ghost" href="${esc(v.repoUrl)}" target="_blank" rel="noopener">GitHub</a>
         <button class="btn ghost" onclick="navigator.clipboard.writeText(location.href);this.textContent='Скопировано'">🔗 Поделиться</button>
       </div>
     </div>
@@ -82,6 +83,16 @@ api("/api/video?id=" + encodeURIComponent(id)).then((v) => {
     </section>`;
 
   shopInit(v);
+  // ❤ лайк: без входа, повторное нажатие убирает
+  const lb = document.getElementById("likeBtn"), ln = document.getElementById("likeN");
+  api("/api/like?id=" + encodeURIComponent(v.id)).then((x) => { if (x.count != null) { ln.textContent = x.count; lb.classList.toggle("on", x.liked); } });
+  lb.onclick = async () => {
+    lb.disabled = true;
+    const r = await fetch("/api/like", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: v.id }) }).then((x) => x.json());
+    lb.disabled = false;
+    if (r.error) return alert(r.error);
+    ln.textContent = r.count; lb.classList.toggle("on", r.liked);
+  };
   // админ: скрыть / вернуть видео (дубли, перезаливы)
   api("/api/bux/me").then((m) => {
     if (v.hidden) el.insertAdjacentHTML("afterbegin", `<div class="note">🙈 Это видео скрыто администратором и не показывается в ленте.</div>`);

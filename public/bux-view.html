@@ -60,7 +60,7 @@ const cid = new URLSearchParams(location.search).get("c");
       box.querySelectorAll("button").forEach((x) => (x.disabled = true));
       const r = await post("/api/bux/finish", { token: s.token, answer: +b.dataset.n });
       box.innerHTML = r.ok
-        ? `<div class="bk-ok">✅ Засчитано! +${R(r.reward)} · заработано всего ${R(r.earn)}</div><a class="btn" href="/bux">Смотреть следующее видео</a>`
+        ? `<div class="bk-ok">✅ Засчитано${r.liked ? " и лайк ❤ поставлен" : ""}! +${R(r.reward)} · заработано всего ${R(r.earn)}</div><a class="btn" href="/bux">Смотреть следующее видео</a>`
         : `<div class="empty">❌ ${esc(r.error)}</div><a class="btn" href="/bux">К списку рекламы</a>`;
     }));
   }

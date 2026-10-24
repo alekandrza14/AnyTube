@@ -24,6 +24,6 @@ const card = (v) => `
   <a class="card" href="/watch?v=${encodeURIComponent(v.id)}">
     <div class="thumb"><video src="${esc(v.src)}#t=1" preload="metadata" muted></video><div class="play">▶</div>${v.duration ? `<span class="dur">${fmtDur(v.duration)}</span>` : ""}${v.partCount > 1 ? `<span class="pc">${v.partCount} ч.</span>` : ""}${badge(v)}</div>
     <div class="meta"><img src="${esc(v.avatar)}&s=72" alt="" loading="lazy">
-      <div><h3>${esc(v.title)}</h3><p>${esc(v.owner)} · ${esc(v.repoTitle)}</p><p><span class="stars">★ ${v.stars}</span>${v.commentCount ? ` · 💬 ${v.commentCount}` : ""}${v.dislikeCount ? ` · 👎 ${v.dislikeCount}` : ""} · ${ago(v.updated)}</p></div>
+      <div><h3>${esc(v.title)}</h3><p>${esc(v.owner)} · ${esc(v.repoTitle)}</p><p><span class="likes">❤ ${v.likes || 0}</span>${v.commentCount ? ` · 💬 ${v.commentCount}` : ""}${v.dislikeCount ? ` · 👎 ${v.dislikeCount}` : ""} · ${ago(v.updated)}</p></div>
     </div>
   </a>`;
