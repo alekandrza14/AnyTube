@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Модерация — AnyTube</title>
+<link rel="stylesheet" href="/style.css">
+<link rel="icon" type="image/png" href="/favicon.png">
+</head>
+<body>
+<header>
+  <a class="logo" href="/"><img src="/logo-emblem.png" alt="">Any<b>Tube</b></a>
+  <a class="btn ghost" href="/bux-admin">💰 Админка букса</a>
+  <a class="btn ghost" href="/">← К видео</a>
+</header>
+<main class="bux">
+  <h1>🛡 Модерация</h1>
+  <div class="tabs" id="mtabs"><a data-t="reports">⚠ Жалобы</a><a data-t="comments">💬 Комментарии</a><a data-t="banned">⛔ Блокировки</a></div>
+  <div id="root" class="status">Загрузка…</div>
+</main>
+<script src="/app.js"></script>
+<script>
+const post = (u, b) => fetch(u, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(b) }).then((r) => r.json());
+const dt = (t) => new Date(t).toLocaleString("ru");
+const watch = (id) => `/watch?v=${encodeURIComponent(id)}`;
+let TAB = new URLSearchParams(location.search).get("tab") || "reports";
+const root = document.getElementById("root");
+const act = async (action, target, reportId, note) => {
+  const r = await post("/api/mod/action", { action, target, reportId, note });
+  if (r.error) return alert(r.error);
+  show(TAB);
+};
+const btn = (label, action, target, reportId, cls = "ghost", confirmText) =>
+  `<button class="btn ${cls} sm" data-a="${action}" data-t="${esc(target || "")}" data-r="${esc(reportId || "")}" ${confirmText ? `data-c="${esc(confirmText)}"` : ""}>${label}</button>`;
+const bind = () => root.querySelectorAll("[data-a]").forEach((b) => (b.onclick = () => {
+  if (b.dataset.c && !confirm(b.dataset.c)) return;
+  act(b.dataset.a, b.dataset.t, b.dataset.r);
+}));
+
+async function show(t) {
+  TAB = t;
+  document.querySelectorAll("#mtabs a").forEach((a) => a.classList.toggle("on", a.dataset.t === t));
+  const u = new URL(location); u.searchParams.set("tab", t); history.replaceState(null, "", u);
+  root.className = "status"; root.textContent = "Загрузка…";
+  if (t === "comments") return comments();
+  const d = await api("/api/mod/reports");
+  if (d.error) { root.innerHTML = `<div class="empty">${esc(d.error)}<br><br><a class="btn" href="/auth/login?back=/moderation">Войти через GitHub</a></div>`; return; }
+  root.className = "";
+  if (t === "banned") return banned(d);
+  const fresh = d.reports.filter((r) => r.status === "new");
+  root.innerHTML = `<p class="muted">Новых жалоб: <b>${fresh.length}</b>. Скрытое пропадает с сайта, файлы на GitHub не удаляются. Блокировка автора скрывает все его видео, комментарии и дизлайки и закрывает ему букс.</p>
+    ${d.reports.length ? d.reports.map((r) => {
+      const author = r.video?.owner || r.comment?.by || (r.type === "user" ? r.target : "");
+      return `<div class="mod-card ${r.status !== "new" ? "done" : ""}">
+        <div class="mod-head"><b>${{ video: "🎬 Видео", comment: "💬 Комментарий", user: "👤 Пользователь", other: "❓ Другое" }[r.type]}</b>
+          <span class="mod-reason">${esc(r.reasonLabel || "")}</span>
+          <span class="muted">${dt(r.t)} · от ${esc(r.by || "аноним")}${r.contact ? " · " + esc(r.contact) : ""}</span>
+          <span class="mod-status">${{ new: "🆕 новая", resolved: "✅ решено", dismissed: "↩ отклонено" }[r.status]}</span></div>
+        ${r.video ? `<p>Видео: <a href="${watch(r.video.id)}" target="_blank">${esc(r.video.title)}</a> · автор <b>${esc(r.video.owner)}</b> ${r.video.hidden ? "· <span class='muted'>уже скрыто</span>" : ""}</p>` : ""}
+        ${r.comment ? `<p>Комментарий <b>${esc(r.comment.by)}</b> к <a href="${watch(r.comment.video)}" target="_blank">видео</a>: «${esc(r.comment.text)}» ${r.comment.hidden ? "· <span class='muted'>уже скрыт</span>" : ""}</p>` : ""}
+        ${!r.video && !r.comment && r.target ? `<p>Объект: <code>${esc(r.target)}</code></p>` : ""}
+        ${r.text ? `<p class="mod-text">${esc(r.text)}</p>` : ""}
+        ${r.status === "new" ? `<div class="bk-row">
+          ${r.video && !r.video.hidden ? btn("🙈 Скрыть видео", "hideVideo", r.video.id, r.id, "") : ""}
+          ${r.comment && !r.comment.hidden ? btn("🙈 Скрыть комментарий", "hideComment", r.comment.id, r.id, "") : ""}
+          ${author ? btn(`⛔ Заблокировать ${esc(author)}`, "ban", author, r.id, "danger", `Заблокировать ${author}? Скроются все его видео, комментарии и дизлайки, букс будет закрыт.`) : ""}
+          ${btn("✅ Решено", "resolve", "", r.id)} ${btn("↩ Отклонить жалобу", "dismiss", "", r.id)}
+        </div>` : `<p class="muted">${r.done ? `обработал ${esc(r.done.by)} ${dt(r.done.t)}` : ""}</p>`}
+      </div>`; }).join("") : `<div class="empty">Жалоб пока нет 🎉</div>`}`;
+  bind();
+}
+async function comments() {
+  const d = await api("/api/mod/comments");
+  if (d.error) { root.innerHTML = `<div class="empty">${esc(d.error)}</div>`; return; }
+  root.className = "";
+  root.innerHTML = `<p class="muted">Последние комментарии со всего сайта.</p>
+    <table class="bx-table"><tr><th>Дата</th><th>Автор</th><th>Текст</th><th>Видео</th><th></th></tr>
+    ${d.comments.map((c) => `<tr class="${c.hidden || c.banned ? "muted" : ""}"><td>${dt(c.created)}</td><td><b>${esc(c.by)}</b>${c.banned ? " ⛔" : ""}</td>
+      <td class="bx-text">${esc(c.text)}</td><td><a href="${watch(c.video)}" target="_blank">${esc(c.videoTitle)}</a></td>
+      <td>${c.hidden ? btn("Вернуть", "unhideComment", c.id) : btn("🙈 Скрыть", "hideComment", c.id, "", "")}
+        ${c.banned ? "" : btn("⛔", "ban", c.by, "", "danger", `Заблокировать ${c.by}?`)}</td></tr>`).join("") || `<tr><td colspan="5">Комментариев нет.</td></tr>`}</table>`;
+  bind();
+}
+function banned(d) {
+  root.innerHTML = `<section class="bx-box"><h2>⛔ Заблокировать автора вручную</h2>
+      <form class="form bx-inline" id="bf"><input name="login" placeholder="ник на GitHub" required><input name="note" placeholder="причина"><button class="btn danger">Заблокировать</button></form></section>
+    <section class="bx-box"><h2>Заблокированные авторы</h2>
+      ${d.banned.length ? `<table class="bx-table"><tr><th>Ник</th><th>Когда</th><th>Причина</th><th></th></tr>${d.banned.map((b) => `<tr><td><a href="https://github.com/${esc(b.login)}" target="_blank">${esc(b.login)}</a></td>
+        <td>${dt(b.t)}</td><td>${esc(b.note || "")}</td><td>${btn("Разблокировать", "unban", b.login)}</td></tr>`).join("")}</table>` : `<p class="muted">Никто не заблокирован.</p>`}
+    </section>
+    <section class="bx-box"><h2>Скрытые комментарии</h2>
+      ${d.hiddenComments.length ? `<table class="bx-table">${d.hiddenComments.map((h) => `<tr><td><code>${esc(h.id)}</code></td><td>${dt(h.t)}</td><td>${btn("Вернуть", "unhideComment", h.id)}</td></tr>`).join("")}</table>` : `<p class="muted">Нет.</p>`}
+      <p class="muted">Скрытые видео и дубли — в <a href="/bux-admin">админке букса</a>.</p>
+    </section>`;
+  bind();
+  const bf = document.getElementById("bf");
+  bf.onsubmit = (e) => { e.preventDefault(); if (confirm(`Заблокировать ${bf.login.value}?`)) act("ban", bf.login.value.trim(), "", bf.note.value); };
+}
+document.querySelectorAll("#mtabs a").forEach((a) => (a.onclick = () => show(a.dataset.t)));
+show(TAB);
+</script>
+</body>
+</html>

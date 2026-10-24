@@ -46,7 +46,8 @@ const rub = (k) => (k / 100).toFixed(2);
 
 // ─────────────── хранилище ───────────────
 const EMPTY = () => ({ v: 1, seq: 1, users: {}, campaigns: {}, views: {}, ipViews: {}, withdrawals: {}, topups: {}, ops: [],
-  purchases: {}, timepass: {}, sbp: {}, dislikeDone: {}, hidden: {}, likes: {}, likeIp: {}, likeDone: {} });
+  purchases: {}, timepass: {}, sbp: {}, dislikeDone: {}, hidden: {}, likes: {}, likeIp: {}, likeDone: {},
+  reports: {}, hiddenComments: {}, bannedAuthors: {} });
 let db = EMPTY();
 let dbSha = null, dirty = false, saving = null, loaded = false;
 const LOCAL = path.join(process.cwd(), "data", "db.json");
@@ -155,7 +156,14 @@ async function readBody(req, limit = 200_000) {
 // ─────────────── проверка уведомлений ЮMoney (подпись sign, HMAC-SHA256) ───────────────
 const rfc3986 = (v) => encodeURIComponent(v).replace(/[!'()*]/g, (c) => "%" + c.charCodeAt(0).toString(16).toUpperCase());
 // скрытые администратором видео (дубли, перезаливы, нарушения)
-export function isHidden(v) { return !!(db.hidden && db.hidden[v.id]); }
+export function isHidden(v) { return !!(db.hidden && db.hidden[v.id]) || isBanned(v.owner); }
+// модерация: заблокированные авторы и скрытые комментарии
+export function isBanned(login) { return !!(login && db.bannedAuthors && db.bannedAuthors[String(login).toLowerCase()]); }
+export function isCommentHidden(id) { return !!(db.hiddenComments && db.hiddenComments[id]); }
+export const CONTACTS = {
+  email: (process.env.CONTACT_EMAIL || process.env.PAYOUT_EMAIL || "alekandrza14@gmail.com").trim(),
+  phone: (process.env.CONTACT_PHONE || process.env.SBP_PHONE || "").trim(),
+};
 // лайки AnyTube (вместо звёзд GitHub): хранятся в базе сайта
 export function likesOf(id) { return (db.likes && db.likes[id] && db.likes[id].n) || 0; }
 function addLike(vid, key, ipk) {
@@ -904,5 +912,80 @@ export function mountBux(app, getVideos) {
       await zip.add("wallpaper" + ext, up.body, 0); // видео уже сжато — кладём без пережатия
       await zip.finish();
     } catch (e) { console.error("[kit]", e.message); res.destroy(); }
+  });
+
+  // ═══════════════ МОДЕРАЦИЯ: жалобы, скрытие, блокировки ═══════════════
+  const REASONS = { spam: "Спам или реклама", copy: "Чужое видео / нарушение авторских прав", adult: "Контент 18+", violence: "Насилие или жестокость",
+    hate: "Оскорбления, травля, разжигание ненависти", illegal: "Запрещённое законом", fraud: "Мошенничество", other: "Другое" };
+  app.get("/api/contacts", (req, res) => res.json({ ...CONTACTS, reasons: REASONS }));
+  const reportRate = new Map();
+  app.post("/api/report", async (req, res) => {
+    if (!guard(res)) return;
+    const b = await readBody(req);
+    const type = ["video", "comment", "user", "other"].includes(b.type) ? b.type : "other";
+    const target = String(b.target || "").trim().slice(0, 300);
+    const reason = REASONS[b.reason] ? b.reason : "other";
+    const text = String(b.text || "").trim().slice(0, 3000);
+    if (!target && !text) return res.status(400).json({ error: "Укажите, на что жалуетесь, или опишите проблему" });
+    const ipk = crypto.createHmac("sha256", CFG.sessionSecret).update(ipOf(req) || "?").digest("hex").slice(0, 16);
+    const r = reportRate.get(ipk) || { n: 0, t: Date.now() };
+    if (Date.now() - r.t > 3600e3) { r.n = 0; r.t = Date.now(); }
+    if (++r.n > 10) return res.status(429).json({ error: "Слишком много жалоб с этого интернета — попробуйте через час или напишите на почту" });
+    reportRate.set(ipk, r);
+    const u = sessionUser(req);
+    const rep = { id: id("r"), type, target, reason, text, contact: String(b.contact || "").slice(0, 200),
+      by: u ? u.login : null, ip: ipk, status: "new", t: Date.now() };
+    db.reports[rep.id] = rep;
+    await save(true);
+    res.json({ ok: true, id: rep.id });
+  });
+  app.get("/api/mod/reports", async (req, res) => {
+    if (!admin(req, res)) return;
+    const { videos } = await getVideos();
+    const vids = new Map(videos.map((v) => [v.id, v]));
+    const comments = new Map(videos.flatMap((v) => (v.comments || []).map((c) => [c.id, { ...c, video: v.id }])));
+    const list = Object.values(db.reports).sort((a, b) => (a.status === "new" ? -1 : 1) - (b.status === "new" ? -1 : 1) || b.t - a.t).slice(0, 500)
+      .map((r) => ({ ...r, ip: undefined, reasonLabel: REASONS[r.reason],
+        video: r.type === "video" ? vids.get(r.target) && { id: r.target, title: vids.get(r.target).title, owner: vids.get(r.target).owner, hidden: isHidden(vids.get(r.target)) } : null,
+        comment: r.type === "comment" ? comments.get(r.target) && { ...comments.get(r.target), hidden: isCommentHidden(r.target) } : null }));
+    res.json({ reports: list, banned: Object.entries(db.bannedAuthors || {}).map(([login, b]) => ({ login, ...b })),
+      hiddenComments: Object.entries(db.hiddenComments || {}).map(([cid, h]) => ({ id: cid, ...h })), reasons: REASONS });
+  });
+  app.get("/api/mod/comments", async (req, res) => {
+    if (!admin(req, res)) return;
+    const { videos } = await getVideos();
+    const all = videos.flatMap((v) => (v.comments || []).map((c) => ({ ...c, video: v.id, videoTitle: v.title, hidden: isCommentHidden(c.id), banned: isBanned(c.by) })))
+      .sort((a, b) => new Date(b.created) - new Date(a.created)).slice(0, 500);
+    res.json({ comments: all });
+  });
+  app.post("/api/mod/action", async (req, res) => {
+    const me = admin(req, res); if (!me) return;
+    const { action, target, reportId, note } = await readBody(req);
+    const t = String(target || "").trim();
+    const stamp = { t: Date.now(), by: me.login, note: String(note || "").slice(0, 300) };
+    switch (action) {
+      case "hideVideo": db.hidden[t] = { ...stamp, reason: stamp.note || "модерация" }; break;
+      case "unhideVideo": delete db.hidden[t]; break;
+      case "hideComment": db.hiddenComments[t] = stamp; break;
+      case "unhideComment": delete db.hiddenComments[t]; break;
+      case "ban": {
+        const login = t.toLowerCase();
+        if (!login || login === CFG.admin) return res.status(400).json({ error: "Нельзя заблокировать этого пользователя" });
+        db.bannedAuthors[login] = stamp;
+        for (const u of Object.values(db.users)) if (u.login?.toLowerCase() === login) u.banned = true; // и в буксе тоже
+        break;
+      }
+      case "unban": {
+        const login = t.toLowerCase();
+        delete db.bannedAuthors[login];
+        for (const u of Object.values(db.users)) if (u.login?.toLowerCase() === login) u.banned = false;
+        break;
+      }
+      case "dismiss": case "resolve": break;
+      default: return res.status(400).json({ error: "Неизвестное действие" });
+    }
+    if (reportId && db.reports[reportId]) { db.reports[reportId].status = action === "dismiss" ? "dismissed" : "resolved"; db.reports[reportId].done = stamp; }
+    await save(true);
+    res.json({ ok: true });
   });
 }

@@ -27,3 +27,16 @@ const card = (v) => `
       <div><h3>${esc(v.title)}</h3><p>${esc(v.owner)} · ${esc(v.repoTitle)}</p><p><span class="likes">+${v.likes || 0}</span>${v.commentCount ? ` · 💬 ${v.commentCount}` : ""}${v.dislikeCount ? ` · 👎 ${v.dislikeCount}` : ""} · ${ago(v.updated)}</p></div>
     </div>
   </a>`;
+
+// ── подвал: правила, жалобы, контакты администрации ──
+(function footer() {
+  if (document.querySelector(".site-foot")) return;
+  const f = document.createElement("footer");
+  f.className = "site-foot";
+  f.innerHTML = `<a href="/report">⚠ Сообщить о нарушении</a> · <a href="/report#rules">Правила</a> · <span id="footContacts"></span>`;
+  document.body.appendChild(f);
+  fetch("/api/contacts").then((r) => r.json()).then((c) => {
+    document.getElementById("footContacts").innerHTML =
+      `<a href="mailto:${esc(c.email)}">✉ ${esc(c.email)}</a>` + (c.phone ? ` · <a href="tel:${esc(c.phone.replace(/[^+\d]/g, ""))}">📞 ${esc(c.phone)}</a>` : "");
+  }).catch(() => {});
+})();

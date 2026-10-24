@@ -34,6 +34,10 @@ services:
         value: alekandrza14
       - key: PAYOUT_EMAIL       # куда приходят заявки на вывод
         value: alekandrza14@gmail.com
+      - key: CONTACT_EMAIL      # почта для жалоб и нарушений (подвал сайта, страница /report)
+        value: alekandrza14@gmail.com
+      - key: CONTACT_PHONE      # телефон для жалоб и нарушений
+        value: "+79087029462"
       - key: BUX_COMMISSION     # доля AnyTube с каждого просмотра (0.25 = 25%)
         value: "0.25"
       # ── Магазин и СБП ──

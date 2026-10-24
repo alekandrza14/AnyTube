@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Правила и жалобы — AnyTube</title>
+<link rel="stylesheet" href="/style.css">
+<link rel="icon" type="image/png" href="/favicon.png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+</head>
+<body>
+<header>
+  <a class="logo" href="/"><img src="/logo-emblem.png" alt="">Any<b>Tube</b></a>
+  <a class="btn ghost" href="/">← К видео</a>
+</header>
+<main class="doc">
+<h1>⚠ Правила и жалобы</h1>
+
+<section class="contact-card" id="contacts">
+  <h2 style="margin-top:0;border:0">Связаться с администрацией</h2>
+  <p>Сообщить о нарушении, запросить удаление чужого видео с вашим контентом, задать вопрос по выплатам:</p>
+  <div class="contact-row" id="contactRow">Загрузка…</div>
+  <p class="muted">Обычно отвечаем в течение суток. В письме укажите ссылку на видео или ник автора.</p>
+</section>
+
+<h2>Пожаловаться</h2>
+<form class="form" id="rf">
+  <label>На что жалуетесь
+    <select name="type">
+      <option value="video">Видео</option><option value="comment">Комментарий</option>
+      <option value="user">Пользователь</option><option value="other">Другое</option>
+    </select></label>
+  <label>Ссылка на видео, ник пользователя или номер комментария <input name="target" placeholder="https://anytube.onrender.com/watch?v=…"></label>
+  <label>Причина <select name="reason" id="reasons"></select></label>
+  <label>Подробности <small>что не так, где именно (время в видео и т.п.)</small><textarea name="text"></textarea></label>
+  <label>Ваш контакт для ответа <small>почта или телефон — по желанию</small><input name="contact"></label>
+  <div class="bk-row"><button class="btn">Отправить жалобу</button></div>
+  <p class="muted" id="rmsg"></p>
+</form>
+
+<h2 id="rules">Правила AnyTube</h2>
+<ol class="rules">
+  <li>Загружайте только своё видео или то, на что у вас есть права. Перезаливы чужих роликов скрываются.</li>
+  <li>Запрещено: контент, нарушающий закон; 18+ без явной пометки; насилие и жестокость; травля, оскорбления, разжигание ненависти; мошенничество и фишинг; вредоносные программы.</li>
+  <li>Запрещены спам, накрутка и обход ограничений букса (несколько своих аккаунтов, боты, автокликеры). Звёзды GitHub не накручиваются никак.</li>
+  <li>Продаваемые приложения и обои должны работать так, как описано. Вирусы и обман — блокировка без выплаты.</li>
+  <li>Администрация может скрыть видео или комментарий и заблокировать автора на сайте. Файлы в ваших репозиториях GitHub мы не трогаем, но на AnyTube они показываться не будут.</li>
+  <li>Видео также должны соответствовать <a href="https://docs.github.com/site-policy/acceptable-use-policies/github-acceptable-use-policies" target="_blank" rel="noopener">правилам GitHub</a>, где они хранятся.</li>
+</ol>
+</main>
+<script src="/app.js"></script>
+<script>
+const p = new URLSearchParams(location.search), f = document.getElementById("rf");
+api("/api/contacts").then((c) => {
+  document.getElementById("contactRow").innerHTML =
+    `<a class="btn" href="mailto:${esc(c.email)}?subject=${encodeURIComponent("AnyTube: нарушение")}">✉ ${esc(c.email)}</a>` +
+    (c.phone ? `<a class="btn ghost" href="tel:${esc(c.phone.replace(/[^+\d]/g, ""))}">📞 ${esc(c.phone)}</a>` : "");
+  document.getElementById("reasons").innerHTML = Object.entries(c.reasons).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join("");
+  if (p.get("reason")) f.reason.value = p.get("reason");
+});
+if (p.get("type")) f.type.value = p.get("type");
+if (p.get("target")) f.target.value = p.get("type") === "video" ? `${location.origin}/watch?v=${encodeURIComponent(p.get("target"))}` : p.get("target");
+f.onsubmit = async (e) => {
+  e.preventDefault();
+  const d = Object.fromEntries(new FormData(f));
+  if (d.type === "video") { try { const u = new URL(d.target); d.target = u.searchParams.get("v") || d.target; } catch {} }
+  const r = await fetch("/api/report", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(d) }).then((x) => x.json());
+  document.getElementById("rmsg").textContent = r.ok ? "✅ Жалоба отправлена, администратор её рассмотрит. Спасибо!" : "❌ " + r.error;
+  if (r.ok) f.reset();
+};
+</script>
+</body>
+</html>

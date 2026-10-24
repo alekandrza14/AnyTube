@@ -199,3 +199,17 @@ main{max-width:1400px;margin:0 auto;padding:24px 20px}
 .like-btn{background:#2a2a33}
 .like-btn.on{background:#2ea05a}
 .like-btn .plus{font-size:18px;line-height:1}
+
+/* ── модерация, жалобы, подвал ── */
+.site-foot{max-width:1400px;margin:30px auto 0;padding:18px 20px 26px;border-top:1px solid var(--line);color:var(--muted);font-size:13px;text-align:center;line-height:2}
+.site-foot a{color:var(--text)}.site-foot a:hover{color:#ff7a7f}
+.contact-card{background:linear-gradient(135deg,rgba(232,22,29,.14),rgba(232,22,29,.03));border:1px solid rgba(232,22,29,.45);border-radius:12px;padding:14px 18px;margin:12px 0}
+.contact-row{display:flex;flex-wrap:wrap;gap:10px;margin:8px 0}
+.rules li{margin-bottom:6px}
+.mod-card{background:var(--panel);border:1px solid var(--line);border-left:4px solid #e8161d;border-radius:10px;padding:12px 14px;margin-bottom:10px}
+.mod-card.done{border-left-color:var(--line);opacity:.65}
+.mod-head{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.mod-reason{background:#e8161d;color:#fff;border-radius:5px;padding:1px 8px;font-size:12px;font-weight:700}
+.mod-status{margin-left:auto;font-size:13px}
+.mod-text{background:var(--bg);border-radius:8px;padding:8px 10px;white-space:pre-wrap}
+.btn.danger{background:#8a1218;color:#fff}

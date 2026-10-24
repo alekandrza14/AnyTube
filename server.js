@@ -2,7 +2,7 @@ import express from "express";
 import { Readable } from "node:stream";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { mountBux, isHidden, likesOf } from "./bux.js";
+import { mountBux, isHidden, likesOf, isBanned, isCommentHidden } from "./bux.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -197,7 +197,7 @@ function dislikesFor(v, dislikes) {
   const base = safePart(path.basename(v.path));
   const perUser = new Map();
   for (const d of dislikes) {
-    if (d.author !== v.owner.toLowerCase() || d.by === d.author) continue; // себе дизлайк не считается
+    if (d.author !== v.owner.toLowerCase() || d.by === d.author || isBanned(d.by)) continue; // себе дизлайк не считается; заблокированные — тоже
     if (!(d.file === base || (d.file.length >= 20 && base.startsWith(d.file)))) continue;
     const prev = perUser.get(d.by);
     if (!prev || new Date(d.created) > new Date(prev.created)) perUser.set(d.by, d); // один голос на человека
@@ -266,7 +266,7 @@ app.get("/api/videos", async (req, res) => {
   if (q) list = list.filter((v) => `${v.title} ${v.repoTitle} ${v.owner} ${v.path}`.toLowerCase().includes(q));
   list = [...list].sort(sort === "new" ? byNew : byStars)
     .map(({ comments, parts, _desc, _paid, dislikes, ...v }) => ({ ...v, likes: likesOf(v.id), partCount: parts ? parts.length : 1,
-      commentCount: (comments || []).length, dislikeCount: dislikes ? dislikes.total : 0, dislikeAvg: dislikes ? dislikes.avg : 0 })); // в ленте только числа
+      commentCount: (comments || []).filter((c) => !isCommentHidden(c.id) && !isBanned(c.by)).length, dislikeCount: dislikes ? dislikes.total : 0, dislikeAvg: dislikes ? dislikes.avg : 0 })); // в ленте только числа
   res.json({ updated: at, error: error || (tokenBad ? "GITHUB_TOKEN неверный, сайт работает без него (лимит 60 запросов/час)" : null), sort, count: list.length, videos: list });
 });
 
@@ -277,6 +277,7 @@ app.get("/api/video", async (req, res) => {
   const { _desc, _paid, ...pub } = v;
   pub.hidden = isHidden(v);
   pub.likes = likesOf(v.id);
+  pub.comments = (v.comments || []).filter((c) => !isCommentHidden(c.id) && !isBanned(c.by)); // скрытые модератором не показываем
   res.json({ ...pub, dislikeLabels: DISLIKE_LABELS });
 });
 
