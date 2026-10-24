@@ -2,7 +2,7 @@ import express from "express";
 import { Readable } from "node:stream";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { mountBux } from "./bux.js";
+import { mountBux, isHidden } from "./bux.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -82,7 +82,7 @@ async function manifestVideo(repo, branch, files) {
     duration,
     title: String(m.title || repo.description || virtual).slice(0, 300),
     repoTitle: repo.name.slice(PREFIX.length).replace(/[_-]+/g, " ") || repo.name,
-    stars: repo.stargazers_count, updated: repo.pushed_at, repoUrl: repo.html_url,
+    stars: repo.stargazers_count, updated: repo.pushed_at, created: repo.created_at, repoUrl: repo.html_url,
     src: videoSrc(owner, parts[0].repo === repo.name ? repo.name : parts[0].repo, parts[0].path),
     parts: parts.map((p, i) => ({ n: i + 1, duration: Number(p.duration) || 0, size: Number(p.size) || 0,
       src: videoSrc(owner, p.repo, p.path), file: p.path })),
@@ -162,6 +162,7 @@ async function repoVideos(repo, files) {
       repoTitle: repo.name.slice(PREFIX.length).replace(/[_-]+/g, " ") || repo.name,
       stars: repo.stargazers_count,
       updated: repo.pushed_at,
+      created: repo.created_at,
       repoUrl: repo.html_url,
       src: videoSrc(repo.owner.login, repo.name, f.path),
     }))
@@ -257,6 +258,7 @@ app.get("/api/videos", async (req, res) => {
   const author = (req.query.author || "").toString().toLowerCase();
   const sort = req.query.sort === "new" ? "new" : "top";
   let list = videos;
+  list = list.filter((v) => !isHidden(v));
   if (author) list = list.filter((v) => v.owner.toLowerCase() === author);
   const kind = (req.query.kind || "").toString();
   if (kind) list = list.filter((v) => v.kind === kind);
@@ -272,6 +274,7 @@ app.get("/api/video", async (req, res) => {
   const v = videos.find((x) => x.id === req.query.id);
   if (!v) return res.status(404).json({ error: "Видео не найдено" });
   const { _desc, _paid, ...pub } = v;
+  pub.hidden = isHidden(v);
   res.json({ ...pub, dislikeLabels: DISLIKE_LABELS });
 });
 

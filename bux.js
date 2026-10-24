@@ -43,7 +43,7 @@ const rub = (k) => (k / 100).toFixed(2);
 
 // ─────────────── хранилище ───────────────
 const EMPTY = () => ({ v: 1, seq: 1, users: {}, campaigns: {}, views: {}, ipViews: {}, withdrawals: {}, topups: {}, ops: [],
-  purchases: {}, timepass: {}, sbp: {}, dislikeDone: {} });
+  purchases: {}, timepass: {}, sbp: {}, dislikeDone: {}, hidden: {} });
 let db = EMPTY();
 let dbSha = null, dirty = false, saving = null, loaded = false;
 const LOCAL = path.join(process.cwd(), "data", "db.json");
@@ -151,6 +151,9 @@ async function readBody(req, limit = 200_000) {
 
 // ─────────────── проверка уведомлений ЮMoney (подпись sign, HMAC-SHA256) ───────────────
 const rfc3986 = (v) => encodeURIComponent(v).replace(/[!'()*]/g, (c) => "%" + c.charCodeAt(0).toString(16).toUpperCase());
+// скрытые администратором видео (дубли, перезаливы, нарушения)
+export function isHidden(v) { return !!(db.hidden && db.hidden[v.id]); }
+
 export function yoomoneySign(params, secret) {
   const str = Object.keys(params).filter((k) => k !== "sign").sort()
     .map((k) => `${k}=${rfc3986(params[k] ?? "")}`).join("&");
@@ -222,7 +225,7 @@ export function mountBux(app, getVideos) {
     const now = Date.now();
     const me = u.login.toLowerCase();
     const list = Object.values(db.campaigns)
-      .filter((c) => c.status === "active" && c.left >= c.price && c.uid !== u.uid && byId.has(c.video))
+      .filter((c) => c.status === "active" && c.left >= c.price && c.uid !== u.uid && byId.has(c.video) && !isHidden(byId.get(c.video)))
       .filter((c) => c.type === "dislike"
         ? byId.get(c.video).owner.toLowerCase() !== me && !db.dislikeDone[`${u.uid}:${c.video}`]   // себе дизлайк не засчитывается; одно видео — один раз
         : !(now - (db.views[`${u.uid}:${c.id}`] || 0) < DAY))
@@ -714,4 +717,32 @@ export function mountBux(app, getVideos) {
     res.json({ ok: true, reward: c.reward, earn: u.earn });
   });
   app.get("/api/bux/dislike/info", (req, res) => res.json({ price: CFG.dislikePrice, reward: reward(CFG.dislikePrice), levels: DISLIKE_LEVELS }));
+
+  // ═══════════════ СКРЫТИЕ ВИДЕО И ПОИСК ДУБЛЕЙ (админ) ═══════════════
+  app.post("/api/bux/admin/hide", async (req, res) => {
+    if (!admin(req, res)) return;
+    const { id: vid, hide, reason } = await readBody(req);
+    if (!vid) return res.status(400).json({ error: "Нет id видео" });
+    db.hidden ||= {};
+    if (hide) db.hidden[vid] = { t: Date.now(), reason: String(reason || "").slice(0, 200) };
+    else delete db.hidden[vid];
+    await save(true);
+    res.json({ ok: true });
+  });
+  app.get("/api/bux/admin/dups", async (req, res) => {
+    if (!admin(req, res)) return;
+    const { videos } = await getVideos();
+    // одинаковый размер файла и длительность (до секунды) у разных репозиториев = почти наверняка один и тот же ролик
+    const groups = new Map();
+    for (const v of videos) {
+      if (!v.size || v.size < 300) continue;
+      const k = `${v.size}:${Math.round(v.duration || 0)}`;
+      (groups.get(k) || groups.set(k, []).get(k)).push(v);
+    }
+    const dups = [...groups.values()].filter((g) => g.length > 1).map((g) => g
+      .sort((a, b) => new Date(a.created || a.updated) - new Date(b.created || b.updated))
+      .map((v, i) => ({ id: v.id, title: v.title, owner: v.owner, created: v.created || v.updated, size: v.size, duration: v.duration, first: i === 0, hidden: isHidden(v) })));
+    const hidden = Object.entries(db.hidden || {}).map(([vid, h]) => ({ id: vid, ...h }));
+    res.json({ dups, hidden });
+  });
 }

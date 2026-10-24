@@ -64,9 +64,13 @@ async function load() {
       </form>
     </section>
 
+    <section class="bx-box"><h2>🙈 Дубли и скрытые видео</h2>
+      <p class="muted">Дубли — видео с одинаковым размером файла и длительностью у разных репозиториев. Первым показан загруженный раньше (скорее всего оригинал). Скрытое видео пропадает из ленты, поиска и букса, файлы на GitHub не трогаются.</p>
+      <div id="dupAdm" class="muted">Ищем дубли…</div>
+    </section>
     <section class="bx-box"><h2>📢 Рекламные кампании</h2>
-      ${d.campaigns.length ? `<table class="bx-table"><tr><th>Дата</th><th>Логин</th><th>Видео</th><th>Время</th><th>Просмотров</th><th>Осталось</th><th>Статус</th><th></th></tr>
-      ${d.campaigns.map((c) => `<tr><td>${dt(c.created)}</td><td>${esc(c.login || "")}</td><td><a href="/watch?v=${encodeURIComponent(c.video)}">${esc(c.video)}</a></td><td>${c.seconds} с</td>
+      ${d.campaigns.length ? `<table class="bx-table"><tr><th>Дата</th><th>Логин</th><th>Видео</th><th>Что</th><th>Выполнено</th><th>Осталось</th><th>Статус</th><th></th></tr>
+      ${d.campaigns.map((c) => `<tr><td>${dt(c.created)}</td><td>${esc(c.login || "")}</td><td><a href="/watch?v=${encodeURIComponent(c.video)}">${esc(c.video)}</a></td><td>${c.type === "dislike" ? `👎 дизлайк ур. ${c.level}` : `👀 ${c.seconds} с`}</td>
         <td>${c.views}</td><td>${R(c.left)}</td><td>${c.status}</td><td>${c.status === "active" ? `<button class="btn ghost sm" data-stop="${c.id}">Остановить</button>` : ""}</td></tr>`).join("")}</table>` : `<p class="muted">Кампаний нет.</p>`}
     </section>
 
@@ -91,6 +95,20 @@ async function load() {
       const amount = document.querySelector(`.sbp-sum[data-s="${b.dataset.sbp}"]`)?.value;
       const r = await post("/api/bux/admin/sbp", { sid: b.dataset.sbp, action: b.dataset.a, amount });
       r.error ? alert(r.error) : load();
+    }));
+  });
+  api("/api/bux/admin/dups").then((d) => {
+    const row = (v) => `<tr class="${v.hidden ? "muted" : ""}"><td>${v.first ? "🥇 раньше" : ""}</td><td><a href="/watch?v=${encodeURIComponent(v.id)}">${esc(v.title)}</a></td><td>${esc(v.owner)}</td>
+      <td>${dt(v.created)}</td><td>${(v.size / 1048576).toFixed(1)} МБ · ${fmtDur(v.duration)}</td>
+      <td>${v.hidden ? `<button class="btn ghost sm" data-hide="${esc(v.id)}" data-h="0">Вернуть</button>` : `<button class="btn sm" data-hide="${esc(v.id)}" data-h="1">🙈 Скрыть</button>`}</td></tr>`;
+    const dupIds = new Set(d.dups.flat().map((v) => v.id));
+    const other = d.hidden.filter((h) => !dupIds.has(h.id));
+    document.getElementById("dupAdm").innerHTML =
+      (d.dups.length ? d.dups.map((g) => `<table class="bx-table" style="margin-bottom:12px"><tr><th></th><th>Видео</th><th>Автор</th><th>Загружено</th><th>Файл</th><th></th></tr>${g.map(row).join("")}</table>`).join("") : "<p>Дублей не найдено.</p>")
+      + (other.length ? `<p><b>Скрыты вручную:</b></p><table class="bx-table">${other.map((h) => `<tr><td><a href="/watch?v=${encodeURIComponent(h.id)}">${esc(h.id)}</a></td><td>${dt(h.t)}</td><td>${esc(h.reason || "")}</td>
+          <td><button class="btn ghost sm" data-hide="${esc(h.id)}" data-h="0">Вернуть</button></td></tr>`).join("")}</table>` : "");
+    document.querySelectorAll("[data-hide]").forEach((b) => (b.onclick = async () => {
+      await post("/api/bux/admin/hide", { id: b.dataset.hide, hide: b.dataset.h === "1", reason: "дубль" }); load();
     }));
   });
   const cr = document.getElementById("cr");

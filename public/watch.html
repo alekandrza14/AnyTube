@@ -82,6 +82,18 @@ api("/api/video?id=" + encodeURIComponent(id)).then((v) => {
     </section>`;
 
   shopInit(v);
+  // админ: скрыть / вернуть видео (дубли, перезаливы)
+  api("/api/bux/me").then((m) => {
+    if (v.hidden) el.insertAdjacentHTML("afterbegin", `<div class="note">🙈 Это видео скрыто администратором и не показывается в ленте.</div>`);
+    if (!m.user || !m.user.admin) return;
+    const row = el.querySelector(".row > div");
+    row.insertAdjacentHTML("beforeend", `<button class="btn ghost" id="hideBtn">${v.hidden ? "👁 Вернуть видео" : "🙈 Скрыть видео"}</button>`);
+    document.getElementById("hideBtn").onclick = async () => {
+      if (!v.hidden && !confirm("Скрыть это видео из ленты, поиска и букса?")) return;
+      await fetch("/api/bux/admin/hide", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: v.id, hide: !v.hidden, reason: "скрыто со страницы видео" }) });
+      location.reload();
+    };
+  });
 
   // ---- части большого видео: следующая включается сама ----
   if (multi) {
