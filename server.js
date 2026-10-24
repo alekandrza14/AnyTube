@@ -2,7 +2,7 @@ import express from "express";
 import { Readable } from "node:stream";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { mountBux, isHidden, likesOf, isBanned, isCommentHidden } from "./bux.js";
+import { mountBux, isHidden, likesOf, isBanned, isCommentHidden, syncApprovals, canSeeHidden, moderationState } from "./bux.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -240,6 +240,7 @@ async function refresh() {
   const videos = lists.flat().sort(byStars);
   for (const v of videos) { v.comments = commentsFor(v, comments); v.dislikes = dislikesFor(v, dislikes); }
   cache = { at: Date.now(), videos, files, error: null };
+  syncApprovals(videos);
   console.log(`[anytube] обновлено: ${repos.length} репо, ${videos.length} видео, ${comments.length} комментариев`);
 }
 
@@ -274,7 +275,11 @@ app.get("/api/video", async (req, res) => {
   const { videos } = await getVideos();
   const v = videos.find((x) => x.id === req.query.id);
   if (!v) return res.status(404).json({ error: "Видео не найдено" });
+  const mod = moderationState(v);
+  if (isHidden(v) && !canSeeHidden(req, v)) // непроверенное и скрытое видят только автор и администратор
+    return res.status(404).json({ error: mod.pending ? "Видео ещё на проверке у модератора" : "Видео недоступно: скрыто администрацией" });
   const { _desc, _paid, ...pub } = v;
+  Object.assign(pub, mod);
   pub.hidden = isHidden(v);
   pub.likes = likesOf(v.id);
   pub.comments = (v.comments || []).filter((c) => !isCommentHidden(c.id) && !isBanned(c.by)); // скрытые модератором не показываем

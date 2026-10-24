@@ -22,6 +22,7 @@ const CFG = {
   minWithdraw: Math.round(Number(env("BUX_MIN_WITHDRAW", "10")) * 100),
   minTopup: Math.round(Number(env("BUX_MIN_TOPUP", "10")) * 100),
   minAccountDays: Number(env("BUX_MIN_ACCOUNT_DAYS", "7")),
+  premod: env("PREMODERATION", "on").toLowerCase() !== "off",  // новые видео ждут одобрения администратора
   dislikePrice: Math.round(Number(env("BUX_DISLIKE_PRICE", "5")) * 100), // цена одного дизлайка для заказчика, коп.
   likePrice: Math.round(Number(env("BUX_LIKE_PRICE", "2")) * 100),       // цена одного лайка для заказчика, коп.
   ghToken: env("GITHUB_TOKEN").replace(/^Bearer\s+/i, ""),
@@ -47,7 +48,7 @@ const rub = (k) => (k / 100).toFixed(2);
 // ─────────────── хранилище ───────────────
 const EMPTY = () => ({ v: 1, seq: 1, users: {}, campaigns: {}, views: {}, ipViews: {}, withdrawals: {}, topups: {}, ops: [],
   purchases: {}, timepass: {}, sbp: {}, dislikeDone: {}, hidden: {}, likes: {}, likeIp: {}, likeDone: {},
-  reports: {}, hiddenComments: {}, bannedAuthors: {} });
+  reports: {}, hiddenComments: {}, bannedAuthors: {}, approved: {}, rejected: {}, trusted: {}, premodInit: false });
 let db = EMPTY();
 let dbSha = null, dirty = false, saving = null, loaded = false;
 const LOCAL = path.join(process.cwd(), "data", "db.json");
@@ -156,7 +157,35 @@ async function readBody(req, limit = 200_000) {
 // ─────────────── проверка уведомлений ЮMoney (подпись sign, HMAC-SHA256) ───────────────
 const rfc3986 = (v) => encodeURIComponent(v).replace(/[!'()*]/g, (c) => "%" + c.charCodeAt(0).toString(16).toUpperCase());
 // скрытые администратором видео (дубли, перезаливы, нарушения)
-export function isHidden(v) { return !!(db.hidden && db.hidden[v.id]) || isBanned(v.owner); }
+export function isHidden(v) { return !!(db.hidden && db.hidden[v.id]) || isBanned(v.owner) || isPending(v) || isRejected(v); }
+// ── премодерация ──
+const isTrusted = (login) => { const l = String(login || "").toLowerCase(); return l === CFG.admin || !!(db.trusted && db.trusted[l]); };
+export function isPending(v) {
+  if (!CFG.premod) return false;
+  if (!loaded) return true;  // база ещё не загрузилась — ничего непроверенного не показываем
+  return !db.approved[v.id] && !db.rejected[v.id] && !isTrusted(v.owner);
+}
+export function isRejected(v) { return !!(db.rejected && db.rejected[v.id]); }
+export function moderationState(v) {
+  return { pending: isPending(v), rejected: db.rejected?.[v.id] || null, hiddenByMod: !!db.hidden?.[v.id], banned: isBanned(v.owner) };
+}
+// после каждого обновления списка: при первом включении одобряем всё уже опубликованное; админ и доверенные — сразу
+export function syncApprovals(videos) {
+  if (!loaded || !CFG.premod) return;
+  let changed = false;
+  for (const v of videos) {
+    if (db.approved[v.id] || db.rejected[v.id]) continue;
+    if (!db.premodInit || isTrusted(v.owner)) { db.approved[v.id] = { t: Date.now(), by: db.premodInit ? "доверенный автор" : "было до премодерации" }; changed = true; }
+  }
+  if (!db.premodInit) { db.premodInit = true; changed = true; console.log("[mod] премодерация включена: уже опубликованные видео одобрены автоматически"); }
+  if (changed) save();
+}
+// видит ли этот посетитель скрытое/непроверенное видео (админ — всё, автор — своё)
+export function canSeeHidden(req, v) {
+  if (!loaded) return false;
+  const u = sessionUser(req);
+  return !!u && (u.login.toLowerCase() === CFG.admin || u.login.toLowerCase() === v.owner.toLowerCase());
+}
 // модерация: заблокированные авторы и скрытые комментарии
 export function isBanned(login) { return !!(login && db.bannedAuthors && db.bannedAuthors[String(login).toLowerCase()]); }
 export function isCommentHidden(id) { return !!(db.hiddenComments && db.hiddenComments[id]); }
@@ -981,11 +1010,29 @@ export function mountBux(app, getVideos) {
         for (const u of Object.values(db.users)) if (u.login?.toLowerCase() === login) u.banned = false;
         break;
       }
+      case "approve": db.approved[t] = stamp; delete db.rejected[t]; break;
+      case "reject": db.rejected[t] = { ...stamp, reason: stamp.note || "не прошло модерацию" }; delete db.approved[t]; break;
+      case "trust": db.trusted[t.toLowerCase()] = stamp; break;
+      case "untrust": delete db.trusted[t.toLowerCase()]; break;
       case "dismiss": case "resolve": break;
       default: return res.status(400).json({ error: "Неизвестное действие" });
     }
     if (reportId && db.reports[reportId]) { db.reports[reportId].status = action === "dismiss" ? "dismissed" : "resolved"; db.reports[reportId].done = stamp; }
     await save(true);
     res.json({ ok: true });
+  });
+
+  // ═══════════════ ПРЕМОДЕРАЦИЯ: очередь новых видео ═══════════════
+  app.get("/api/mod/pending", async (req, res) => {
+    if (!admin(req, res)) return;
+    const { videos } = await getVideos();
+    const pick = (v) => ({ id: v.id, title: v.title, owner: v.owner, avatar: v.avatar, src: v.src, kind: v.kind, sale: v.sale,
+      duration: v.duration, created: v.created || v.updated, repoUrl: v.repoUrl, descChunks: v.descChunks });
+    res.json({
+      enabled: CFG.premod,
+      pending: videos.filter((v) => isPending(v) && !isBanned(v.owner)).map(pick).sort((a, b) => new Date(a.created) - new Date(b.created)),
+      rejected: videos.filter((v) => isRejected(v)).map((v) => ({ ...pick(v), ...db.rejected[v.id] })),
+      trusted: Object.entries(db.trusted || {}).map(([login, x]) => ({ login, ...x })),
+    });
   });
 }

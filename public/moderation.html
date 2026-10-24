@@ -14,7 +14,7 @@
 </header>
 <main class="bux">
   <h1>🛡 Модерация</h1>
-  <div class="tabs" id="mtabs"><a data-t="reports">⚠ Жалобы</a><a data-t="comments">💬 Комментарии</a><a data-t="banned">⛔ Блокировки</a></div>
+  <div class="tabs" id="mtabs"><a data-t="pending">⏳ На проверке <span id="pendN"></span></a><a data-t="reports">⚠ Жалобы</a><a data-t="comments">💬 Комментарии</a><a data-t="banned">⛔ Блокировки</a></div>
   <div id="root" class="status">Загрузка…</div>
 </main>
 <script src="/app.js"></script>
@@ -22,7 +22,7 @@
 const post = (u, b) => fetch(u, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(b) }).then((r) => r.json());
 const dt = (t) => new Date(t).toLocaleString("ru");
 const watch = (id) => `/watch?v=${encodeURIComponent(id)}`;
-let TAB = new URLSearchParams(location.search).get("tab") || "reports";
+let TAB = new URLSearchParams(location.search).get("tab") || "pending";
 const root = document.getElementById("root");
 const act = async (action, target, reportId, note) => {
   const r = await post("/api/mod/action", { action, target, reportId, note });
@@ -42,6 +42,7 @@ async function show(t) {
   const u = new URL(location); u.searchParams.set("tab", t); history.replaceState(null, "", u);
   root.className = "status"; root.textContent = "Загрузка…";
   if (t === "comments") return comments();
+  if (t === "pending") return pending();
   const d = await api("/api/mod/reports");
   if (d.error) { root.innerHTML = `<div class="empty">${esc(d.error)}<br><br><a class="btn" href="/auth/login?back=/moderation">Войти через GitHub</a></div>`; return; }
   root.className = "";
@@ -79,6 +80,38 @@ async function comments() {
       <td>${c.hidden ? btn("Вернуть", "unhideComment", c.id) : btn("🙈 Скрыть", "hideComment", c.id, "", "")}
         ${c.banned ? "" : btn("⛔", "ban", c.by, "", "danger", `Заблокировать ${c.by}?`)}</td></tr>`).join("") || `<tr><td colspan="5">Комментариев нет.</td></tr>`}</table>`;
   bind();
+}
+const R = (k) => (k / 100).toFixed(2).replace(".", ",").replace(",00", "") + " ₽";
+async function pending() {
+  const d = await api("/api/mod/pending");
+  if (d.error) { root.innerHTML = `<div class="empty">${esc(d.error)}<br><br><a class="btn" href="/auth/login?back=/moderation">Войти через GitHub</a></div>`; return; }
+  root.className = "";
+  document.getElementById("pendN").textContent = d.pending.length ? `(${d.pending.length})` : "";
+  const kind = (v) => ({ app: "📦 Приложение", wallpaper: "🖼 Обои" }[v.kind] || "🎬 Видео") + (v.sale ? ` · 💰 ${v.sale.per_hour ? R(v.sale.per_hour) + "/час" : v.sale.buy ? R(v.sale.buy) : "подписка"}` : "");
+  root.innerHTML = `
+    ${d.enabled ? "" : `<div class="note">Премодерация выключена (PREMODERATION=off) — новые видео публикуются сразу.</div>`}
+    <p class="muted">Новые видео не видны в ленте, поиске, обоях и буксе, пока вы их не одобрите. Автор видит своё видео по ссылке с пометкой «на проверке».</p>
+    ${d.pending.length ? `<div class="mod-grid">${d.pending.map((v) => `
+      <div class="mod-card mod-video">
+        <video src="${esc(v.src)}" controls preload="metadata" muted></video>
+        <div><b>${esc(v.title)}</b><br><span class="muted">${esc(v.owner)} · ${kind(v)} · ${fmtDur(v.duration)} · загружено ${dt(v.created)}</span><br>
+          <a href="${watch(v.id)}" target="_blank">открыть страницу</a> · <a href="${esc(v.repoUrl)}" target="_blank">репозиторий</a></div>
+        <div class="bk-row">
+          ${btn("✅ Одобрить", "approve", v.id, "", "")}
+          <button class="btn ghost sm" data-rej="${esc(v.id)}">❌ Отклонить</button>
+          ${btn(`⭐ Доверять ${esc(v.owner)}`, "trust", v.owner, "", "ghost", `Доверять ${v.owner}? Его новые видео будут публиковаться без проверки (это видео тоже).`)}
+          ${btn("⛔ Заблокировать автора", "ban", v.owner, "", "danger", `Заблокировать ${v.owner}?`)}
+        </div>
+      </div>`).join("")}</div>` : `<div class="empty">Очередь пуста — все видео проверены 🎉</div>`}
+    ${d.rejected.length ? `<section class="bx-box"><h2>❌ Отклонённые</h2><table class="bx-table">${d.rejected.map((v) => `<tr><td><a href="${watch(v.id)}" target="_blank">${esc(v.title)}</a></td>
+      <td>${esc(v.owner)}</td><td>${esc(v.reason || "")}</td><td>${dt(v.t)}</td><td>${btn("✅ Всё-таки одобрить", "approve", v.id)}</td></tr>`).join("")}</table></section>` : ""}
+    ${d.trusted.length ? `<section class="bx-box"><h2>⭐ Доверенные авторы</h2><p class="muted">Их видео публикуются без проверки.</p>
+      <table class="bx-table">${d.trusted.map((t) => `<tr><td>${esc(t.login)}</td><td>${dt(t.t)}</td><td>${btn("Убрать доверие", "untrust", t.login)}</td></tr>`).join("")}</table></section>` : ""}`;
+  bind();
+  root.querySelectorAll("[data-rej]").forEach((b) => (b.onclick = () => {
+    const why = prompt("Причина отклонения (увидит только автор):", "Нарушение правил AnyTube");
+    if (why !== null) act("reject", b.dataset.rej, "", why);
+  }));
 }
 function banned(d) {
   root.innerHTML = `<section class="bx-box"><h2>⛔ Заблокировать автора вручную</h2>

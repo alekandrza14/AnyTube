@@ -38,6 +38,8 @@ services:
         value: alekandrza14@gmail.com
       - key: CONTACT_PHONE      # телефон для жалоб и нарушений
         value: "+79087029462"
+      - key: PREMODERATION      # on — новые видео ждут одобрения администратора, off — публикуются сразу
+        value: "on"
       - key: BUX_COMMISSION     # доля AnyTube с каждого просмотра (0.25 = 25%)
         value: "0.25"
       # ── Магазин и СБП ──
