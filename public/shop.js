@@ -14,7 +14,8 @@ async function shopInit(v) {
   const back = encodeURIComponent(location.pathname + location.search);
   const kindName = { video: "Видео", app: "📦 Приложение", wallpaper: "🖼 Анимированные обои" }[v.kind];
 
-  const fileLinks = (list, paid) => list.map((f) => `<a class="btn shop-dl" href="${paid ? `/paid/file?id=${encodeURIComponent(v.id)}&f=${f.i}` : esc(f.url)}" ${paid ? "" : 'download target="_blank" rel="noopener"'}>⬇ Скачать ${esc(f.name)} <small>${(f.size / 1048576).toFixed(1)} МБ</small></a>`).join("");
+  const kitLink = () => `<a class="btn shop-dl big" href="/wallpaper/kit?id=${encodeURIComponent(v.id)}">⬇ Скачать обои с установщиком <small>Windows 10/11 · архив с install.cmd</small></a>`;
+  const fileLinks = (list, paid) => (isWall ? kitLink() + `<span class="muted" style="align-self:center">или <a href="${paid ? `/paid/file?id=${encodeURIComponent(v.id)}&f=0` : esc(list[0]?.url || "#")}" ${paid ? "" : "download"}>только видео</a></span>` : "") + (isWall ? "" : list.map((f) => `<a class="btn shop-dl" href="${paid ? `/paid/file?id=${encodeURIComponent(v.id)}&f=${f.i}` : esc(f.url)}" ${paid ? "" : 'download target="_blank" rel="noopener"'}>⬇ Скачать ${esc(f.name)} <small>${(f.size / 1048576).toFixed(1)} МБ</small></a>`).join(""));
 
   function playFull(i = 0) { // полное платное видео из приватного репозитория
     fullMode = true;
@@ -54,13 +55,13 @@ async function shopInit(v) {
     if (v.kind === "video") playFull(0);
     document.querySelector(".wm")?.remove();
     render();
-    if (isWall && v.paidFiles[0]) location.href = `/paid/file?id=${encodeURIComponent(v.id)}&f=0`; // сразу скачиваем купленное
+    if (isWall && v.paidFiles[0]) location.href = `/wallpaper/kit?id=${encodeURIComponent(v.id)}`; // сразу скачиваем купленное с установщиком
   }
 
   const wallInfo = () => `<details class="wall-howto"><summary>🖥 Как поставить живые обои на рабочий стол</summary>
-    <ol><li><b>Windows:</b> установите бесплатную программу <b>Lively Wallpaper</b> (Microsoft Store) → «Добавить обои» → выберите скачанный файл.</li>
-    <li><b>Android:</b> любое приложение «видеообои» из Google Play → выберите файл → «Установить на главный экран».</li>
-    <li>Файл можно также открыть в любом плеере с повтором.</li></ol></details>`;
+    <ol><li><b>Windows 10/11:</b> скачайте «обои с установщиком», распакуйте архив («Извлечь все») и запустите <b>install.cmd</b>.
+      Он сам поставит всё нужное, запустит обои под иконками рабочего стола и спросит про автозапуск. Остановить: <b>stop.cmd</b>.</li>
+    <li><b>Android:</b> скачайте «только видео» и поставьте через любое приложение «видеообои» из Google Play.</li></ol></details>`;
   const isWall = v.kind === "wallpaper";
 
   function render() {

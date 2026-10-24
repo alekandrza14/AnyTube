@@ -2,6 +2,8 @@
 // Деньги — в копейках (целые числа). Данные — db.json в приватном репозитории GitHub (или локальный файл).
 import crypto from "node:crypto";
 import fs from "node:fs";
+import zlib from "node:zlib";
+import { fileURLToPath } from "node:url";
 import path from "node:path";
 
 const env = (k, d = "") => (process.env[k] ?? d).toString().trim();
@@ -821,4 +823,86 @@ export function mountBux(app, getVideos) {
     res.json({ ok: true, campaign: c, ad: u.ad });
   }
   app.get("/api/bux/like/info", (req, res) => res.json({ price: CFG.likePrice, reward: reward(CFG.likePrice) }));
+
+  // ═══════════════ ЖИВЫЕ ОБОИ С УСТАНОВЩИКОМ: zip «на лету» (видео + проигрыватель + install.cmd) ═══════════════
+  const KIT_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), "wallpaper-kit");
+  const CRC_T = (() => { const t = new Int32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; t[n] = c; } return t; })();
+  const crc32 = (crc, buf) => { crc = ~crc; for (let i = 0; i < buf.length; i++) crc = CRC_T[(crc ^ buf[i]) & 0xff] ^ (crc >>> 8); return ~crc >>> 0; };
+  function dosTime(d = new Date()) {
+    return { time: (d.getHours() << 11) | (d.getMinutes() << 5) | (d.getSeconds() >> 1),
+      date: ((d.getFullYear() - 1980) << 9) | ((d.getMonth() + 1) << 5) | d.getDate() };
+  }
+  // потоковый ZIP: deflate (для видео уровень 0 — быстро), CRC и размеры — в дескрипторе после данных
+  function zipWriter(out) {
+    const entries = []; let offset = 0; const { time, date } = dosTime();
+    const write = (b) => new Promise((ok, fail) => { offset += b.length; out.write(b) ? ok() : out.once("drain", ok); out.once("error", fail); });
+    async function add(name, source, level) { // source: Buffer или асинхронный итератор Buffer'ов
+      const nameB = Buffer.from(name, "utf8"), h = Buffer.alloc(30);
+      h.writeUInt32LE(0x04034b50, 0); h.writeUInt16LE(20, 4); h.writeUInt16LE(0x0808, 6); h.writeUInt16LE(8, 8);
+      h.writeUInt16LE(time, 10); h.writeUInt16LE(date, 12); h.writeUInt16LE(nameB.length, 26);
+      const start = offset; await write(Buffer.concat([h, nameB]));
+      let crc = 0, size = 0, csize = 0;
+      const def = zlib.createDeflateRaw({ level });
+      const done = new Promise((ok, fail) => { def.on("end", ok); def.on("error", fail); });
+      def.on("data", (c) => { csize += c.length; offset += c.length; if (!out.write(c)) { def.pause(); out.once("drain", () => def.resume()); } });
+      for await (const chunk of (Buffer.isBuffer(source) ? [source] : source)) {
+        const b = Buffer.from(chunk); crc = crc32(crc, b); size += b.length;
+        if (!def.write(b)) await new Promise((ok) => def.once("drain", ok));
+      }
+      def.end(); await done;
+      const dd = Buffer.alloc(16); dd.writeUInt32LE(0x08074b50, 0); dd.writeUInt32LE(crc, 4); dd.writeUInt32LE(csize, 8); dd.writeUInt32LE(size, 12);
+      await write(dd);
+      entries.push({ nameB, crc, csize, size, start });
+    }
+    async function finish() {
+      const cdStart = offset; const parts = [];
+      for (const e of entries) {
+        const c = Buffer.alloc(46);
+        c.writeUInt32LE(0x02014b50, 0); c.writeUInt16LE(20, 4); c.writeUInt16LE(20, 6); c.writeUInt16LE(0x0808, 8); c.writeUInt16LE(8, 10);
+        c.writeUInt16LE(time, 12); c.writeUInt16LE(date, 14); c.writeUInt32LE(e.crc, 16); c.writeUInt32LE(e.csize, 20); c.writeUInt32LE(e.size, 24);
+        c.writeUInt16LE(e.nameB.length, 28); c.writeUInt32LE(e.start, 42);
+        parts.push(c, e.nameB);
+      }
+      const cd = Buffer.concat(parts), end = Buffer.alloc(22);
+      end.writeUInt32LE(0x06054b50, 0); end.writeUInt16LE(entries.length, 8); end.writeUInt16LE(entries.length, 10);
+      end.writeUInt32LE(cd.length, 12); end.writeUInt32LE(cdStart, 16);
+      await write(cd); await write(end); out.end();
+    }
+    return { add, finish };
+  }
+  app.get("/wallpaper/kit", async (req, res) => {
+    const v = (await getVideos()).videos.find((x) => x.id === String(req.query.id || ""));
+    if (!v || v.kind !== "wallpaper") return res.status(404).send("Обои не найдены");
+    let url, headers = {}, ext;
+    if (v.sale) {
+      if (!guard(res)) return;
+      const u = sessionUser(req);
+      if (!u) return redirect(res, `/auth/login?back=${encodeURIComponent("/watch?v=" + encodeURIComponent(v.id))}`);
+      const f = v._paid?.files?.[0];
+      if (!f || !access(u, v).owned) return res.status(402).send("Сначала купите эти обои");
+      if (!CFG.paidToken) return res.status(503).send("Платные файлы не настроены (PAID_TOKEN)");
+      url = `${f.lfs ? "https://media.githubusercontent.com/media" : "https://raw.githubusercontent.com"}/${v.owner}/${f.repo}/HEAD/${f.path.split("/").map(encodeURIComponent).join("/")}`;
+      headers = { Authorization: `token ${CFG.paidToken}` };
+      ext = path.extname(f.name || f.path);
+    } else {
+      const f = v.files?.[0];
+      if (!f) return res.status(404).send("У этих обоев нет файла для скачивания");
+      url = f.url; ext = path.extname(f.name || "");
+    }
+    ext = /^\.(mp4|webm|mkv|mov|avi|gif)$/i.test(ext) ? ext.toLowerCase() : ".mp4";
+    const up = await fetch(url, { headers }).catch(() => null);
+    if (!up || !up.ok) return res.status(502).send("Не удалось получить файл обоев с GitHub");
+    const slugName = String(v.title || "wallpaper").replace(/[^\p{L}\p{N}_-]+/gu, "_").slice(0, 60) || "wallpaper";
+    res.statusCode = 200;
+    res.setHeader("Content-Type", "application/zip");
+    res.setHeader("Content-Disposition", `attachment; filename="AnyTube-wallpaper.zip"; filename*=UTF-8''${encodeURIComponent("AnyTube-обои-" + slugName + ".zip")}`);
+    res.setHeader("Cache-Control", "private, no-store");
+    const zip = zipWriter(res);
+    try {
+      for (const name of ["install.cmd", "start.cmd", "stop.cmd", "autostart.cmd", "live_wallpaper.py", "README.txt"])
+        await zip.add(name, fs.readFileSync(path.join(KIT_DIR, name)), 6);
+      await zip.add("wallpaper" + ext, up.body, 0); // видео уже сжато — кладём без пережатия
+      await zip.finish();
+    } catch (e) { console.error("[kit]", e.message); res.destroy(); }
+  });
 }
