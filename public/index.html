@@ -11,12 +11,13 @@
 <header>
   <a class="logo" href="/"><img src="/logo-emblem.png" alt="">Any<b>Tube</b></a>
   <form class="search" id="sf"><input id="q" placeholder="Поиск видео или автора"><button>🔍</button></form>
+  <a class="btn ghost" href="/wallpapers">🖼 Обои</a>
   <a class="btn ghost" href="/bux">💰 Букс</a>
   <a class="btn" href="/upload">＋ Загрузить</a>
 </header>
 <main>
   <div class="tabs" id="tabs"><a data-s="top">🔥 Топ</a><a data-s="new">🕒 Новые</a></div>
-  <div class="tabs kinds" id="kinds"><a data-k="">Всё</a><a data-k="video">🎬 Видео</a><a data-k="app">📦 Приложения</a><a data-k="wallpaper">🖼 Обои</a></div>
+  <div class="tabs kinds" id="kinds"><a data-k="">Всё</a><a data-k="video">🎬 Видео</a><a data-k="app">📦 Приложения</a><a href="/wallpapers" data-k="wallpaper">🖼 Магазин обоев</a></div>
   <div class="status" id="status">Загружаем видео с GitHub…</div>
   <div class="grid" id="grid"></div>
 </main>
@@ -25,7 +26,7 @@
 const p = new URLSearchParams(location.search);
 const q = p.get("q") || "", author = p.get("author") || "", sort = p.get("sort") === "new" ? "new" : "top";
 const kind = p.get("kind") || "";
-for (const k of document.querySelectorAll("#kinds a")) { const x = new URLSearchParams(p); k.dataset.k ? x.set("kind", k.dataset.k) : x.delete("kind"); k.href = "?" + x; if (k.dataset.k === kind) k.className = "on"; }
+for (const k of document.querySelectorAll("#kinds a:not([href='/wallpapers'])")) { const x = new URLSearchParams(p); k.dataset.k ? x.set("kind", k.dataset.k) : x.delete("kind"); k.href = "?" + x; if (k.dataset.k === kind) k.className = "on"; }
 document.getElementById("q").value = q;
 document.getElementById("sf").onsubmit = (e) => { e.preventDefault(); p.set("q", document.getElementById("q").value); location.search = p; };
 for (const a of document.querySelectorAll("#tabs a")) {

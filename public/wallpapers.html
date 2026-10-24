@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Магазин живых обоев — AnyTube</title>
+<link rel="stylesheet" href="/style.css">
+<link rel="icon" type="image/png" href="/favicon.png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+</head>
+<body>
+<header>
+  <a class="logo" href="/"><img src="/logo-emblem.png" alt="">Any<b>Tube</b></a>
+  <form class="search" id="sf"><input id="q" placeholder="Поиск обоев"><button>🔍</button></form>
+  <a class="btn ghost" href="/bux">💰 Букс</a>
+  <a class="btn" href="/upload">＋ Продать обои</a>
+</header>
+<main>
+  <section class="wall-hero">
+    <div>
+      <h1>🖼 Магазин живых обоев</h1>
+      <p>Анимированные обои для рабочего стола Windows и телефона. Платные покупаются один раз навсегда, бесплатные скачиваются сразу.
+        Оплата с баланса AnyTube: пополнение через ЮMoney или СБП.</p>
+      <div class="tabs" id="wtabs"><a data-f="">Все</a><a data-f="paid">💰 Платные</a><a data-f="free">🎁 Бесплатные</a></div>
+    </div>
+    <div class="wall-steps">
+      <div><b>1</b> Выберите обои</div>
+      <div><b>2</b> Купите или скачайте</div>
+      <div><b>3</b> Поставьте через <b>Lively Wallpaper</b></div>
+    </div>
+  </section>
+  <div class="status" id="status">Загружаем обои…</div>
+  <div class="wall-grid" id="grid"></div>
+</main>
+<script src="/app.js"></script>
+<script>
+const p = new URLSearchParams(location.search);
+const q = p.get("q") || "", filter = p.get("f") || "";
+const R = (x) => (x / 100).toFixed(2).replace(".", ",").replace(",00", "") + " ₽";
+document.getElementById("q").value = q;
+document.getElementById("sf").onsubmit = (e) => { e.preventDefault(); p.set("q", document.getElementById("q").value); location.search = p; };
+for (const a of document.querySelectorAll("#wtabs a")) {
+  const x = new URLSearchParams(p); a.dataset.f ? x.set("f", a.dataset.f) : x.delete("f"); a.href = "?" + x;
+  if (a.dataset.f === filter) a.className = "on";
+}
+api(`/api/videos?kind=wallpaper&q=${encodeURIComponent(q)}`).then((d) => {
+  let list = d.videos;
+  if (filter === "paid") list = list.filter((v) => v.sale);
+  if (filter === "free") list = list.filter((v) => !v.sale);
+  document.getElementById("status").textContent = `${list.length} обоев · ${list.filter((v) => v.sale).length} в продаже`;
+  const g = document.getElementById("grid");
+  if (!list.length) { g.outerHTML = `<div class="empty">Обоев пока нет. <a class="btn" href="/upload">Выставить свои на продажу</a></div>`; return; }
+  g.innerHTML = list.map((v) => `
+    <a class="wall-card" href="/watch?v=${encodeURIComponent(v.id)}">
+      <div class="monitor"><div class="screen">
+        <video src="${esc(v.src)}" muted loop playsinline preload="metadata"></video>
+        ${v.sale ? `<span class="wm-small">ПРЕВЬЮ</span>` : ""}
+      </div><div class="stand"></div></div>
+      <div class="wall-info">
+        <div><b>${esc(v.title)}</b><small>${esc(v.owner)}</small></div>
+        ${v.sale ? `<span class="price">${R(v.sale.buy)}</span>` : `<span class="price free">Бесплатно</span>`}
+      </div>
+      <span class="btn ${v.sale ? "" : "ghost"} wall-cta">${v.sale ? "🛒 Купить" : "⬇ Скачать"}</span>
+    </a>`).join("");
+  // превью оживают при наведении (и сразу — на телефоне)
+  const touch = matchMedia("(hover: none)").matches;
+  g.querySelectorAll(".wall-card").forEach((c) => {
+    const vid = c.querySelector("video");
+    if (touch) { vid.autoplay = true; vid.play().catch(() => {}); return; }
+    c.onmouseenter = () => vid.play().catch(() => {});
+    c.onmouseleave = () => vid.pause();
+  });
+});
+</script>
+</body>
+</html>

@@ -15,6 +15,9 @@ const badge = (v) => {
   const k = { app: "📦 Приложение", wallpaper: "🖼 Обои" }[v.kind] || "";
   const s = v.sale, R = (x) => (x / 100).toFixed(2).replace(".", ",").replace(",00", "") + " ₽";
   const price = s ? (s.per_hour ? `${R(s.per_hour)}/час` : s.buy ? R(s.buy) : s.sub ? "подписка" : "") : (v.kind !== "video" ? "бесплатно" : "");
+  if (v.kind === "wallpaper") return s
+    ? `<span class="ribbon">🖼 ОБОИ В ПРОДАЖЕ</span><span class="pricetag">${price}</span>`
+    : `<span class="ribbon free">🖼 ОБОИ</span><span class="pricetag free">БЕСПЛАТНО</span>`;
   return k || price ? `<span class="kb">${[k, price && (s ? "💰 " + price : price)].filter(Boolean).join(" · ")}</span>` : "";
 };
 const card = (v) => `

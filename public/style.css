@@ -147,3 +147,34 @@ main{max-width:1400px;margin:0 auto;padding:24px 20px}
 .sbp-card{background:var(--bg);border:1px dashed #5fd38a;border-radius:10px;padding:12px;margin:8px 0;line-height:1.7}
 .sbp-card b{font-size:18px}
 .sbp-code{font-size:22px;letter-spacing:2px;color:#5fd38a}
+/* ── живые обои: витрина ── */
+.ribbon{position:absolute;top:0;left:0;background:#e8161d;color:#fff;font-size:12px;font-weight:800;padding:4px 10px;border-radius:0 0 10px 0;box-shadow:0 2px 6px rgba(0,0,0,.4);letter-spacing:.3px;z-index:2;white-space:nowrap}
+.ribbon.free{background:#2ea05a}
+.pricetag{position:absolute;top:6px;right:6px;background:#fff;color:#e8161d;font-size:16px;font-weight:900;padding:2px 9px;border-radius:7px;box-shadow:0 2px 8px rgba(0,0,0,.45);z-index:2}
+.pricetag.free{color:#2ea05a;font-size:12px;padding:4px 8px}
+.side .ribbon{font-size:10px;padding:2px 6px}.side .pricetag{font-size:12px;padding:1px 6px}.side .pricetag.free{font-size:9px}
+.thumb{overflow:hidden}
+.wall-hero{display:flex;flex-wrap:wrap;gap:20px;justify-content:space-between;align-items:center;background:linear-gradient(135deg,rgba(232,22,29,.18),rgba(46,160,90,.08));border:1px solid var(--line);border-radius:14px;padding:18px 22px;margin-bottom:16px}
+.wall-hero h1{margin:0 0 6px;font-size:28px}.wall-hero p{max-width:640px;color:var(--muted);margin:0 0 12px}
+.wall-steps{display:grid;gap:8px}.wall-steps div{background:var(--panel);border-radius:10px;padding:8px 12px;font-size:14px}
+.wall-steps div>b:first-child{display:inline-grid;place-items:center;width:22px;height:22px;border-radius:50%;background:#e8161d;color:#fff;margin-right:8px;font-size:12px}
+.wall-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:22px}
+.wall-card{display:grid;gap:10px;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px;transition:.15s}
+.wall-card:hover{border-color:#e8161d;transform:translateY(-2px)}
+.monitor .screen{position:relative;aspect-ratio:16/9;background:#000;border:6px solid #2b2b33;border-radius:8px;overflow:hidden}
+.monitor video{width:100%;height:100%;object-fit:cover;display:block}
+.monitor .stand{width:30%;height:10px;margin:0 auto;background:#2b2b33;border-radius:0 0 8px 8px}
+.wm-small{position:absolute;inset:0;display:grid;place-items:center;color:rgba(255,255,255,.55);font-weight:900;font-size:22px;letter-spacing:4px;text-shadow:0 1px 4px rgba(0,0,0,.6);pointer-events:none}
+.wall-info{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.wall-info b{display:block}.wall-info small{color:var(--muted)}
+.price{background:#e8161d;color:#fff;font-weight:900;font-size:18px;padding:4px 12px;border-radius:8px;white-space:nowrap}
+.price.free{background:#2ea05a;font-size:14px}
+.wall-cta{text-align:center}
+/* страница обоев */
+.vwrap{position:relative}
+.wm{position:absolute;inset:0;display:grid;place-items:center;pointer-events:none}
+.wm span{color:rgba(255,255,255,.6);font-weight:900;font-size:clamp(22px,5vw,54px);letter-spacing:6px;border:4px solid rgba(255,255,255,.45);padding:6px 22px;border-radius:12px;transform:rotate(-12deg);text-shadow:0 2px 8px rgba(0,0,0,.6)}
+.wall-sale{display:flex;gap:16px;align-items:center;background:var(--bg);border-radius:10px;padding:12px;margin:6px 0 10px}
+.wall-price{background:#e8161d;color:#fff;font-weight:900;font-size:28px;padding:8px 16px;border-radius:10px;white-space:nowrap}
+.wall-howto{margin-top:10px}.wall-howto summary{cursor:pointer;font-weight:600}
+.wall-howto ol{margin:8px 0 0;padding-left:20px;color:var(--muted)}
