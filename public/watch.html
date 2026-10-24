@@ -4,10 +4,12 @@
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>AnyTube — просмотр</title>
 <link rel="stylesheet" href="/style.css">
+<link rel="icon" type="image/png" href="/favicon.png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
 </head>
 <body>
 <header>
-  <a class="logo" href="/">Any<b>Tube</b></a>
+  <a class="logo" href="/"><img src="/logo-emblem.png" alt="">Any<b>Tube</b></a>
   <form class="search" action="/"><input name="q" placeholder="Поиск видео или автора"><button>🔍</button></form>
   <a class="btn ghost" href="/bux">💰 Букс</a>
   <a class="btn" href="/upload">＋ Загрузить</a>
@@ -17,6 +19,7 @@
   <aside class="side" id="side"></aside>
 </main>
 <script src="/app.js"></script>
+<script src="/shop.js"></script>
 <script>
 const id = new URLSearchParams(location.search).get("v");
 api("/api/video?id=" + encodeURIComponent(id)).then((v) => {
@@ -37,12 +40,13 @@ api("/api/video?id=" + encodeURIComponent(id)).then((v) => {
       <a class="author" href="/?author=${encodeURIComponent(v.owner)}"><img src="${esc(v.avatar)}&s=80" alt="">
         <div><b>${esc(v.owner)}</b><br><span style="color:var(--muted)">${esc(v.repo)}</span></div></a>
       <div style="display:flex;gap:8px">
-        <a class="btn" id="dl" href="${esc(parts[0].src)}?download=1">⬇ Скачать${multi ? " часть 1" : ""}</a>
+        <a class="btn" id="dl" href="${esc(parts[0].src)}?download=1">⬇ Скачать${v.trailer ? " трейлер" : multi ? " часть 1" : ""}</a>
         <a class="btn ghost" href="${esc(v.repoUrl)}" target="_blank" rel="noopener">GitHub ★ ${v.stars}</a>
         <button class="btn ghost" onclick="navigator.clipboard.writeText(location.href);this.textContent='Скопировано'">🔗 Поделиться</button>
       </div>
     </div>
     <p style="color:var(--muted)">Файл: ${esc(v.path)}${multi ? ` · ${parts.length} частей` : ""} · обновлено ${ago(v.updated)}</p>
+    <section class="shop" id="shop"></section>
     <div class="promo"><a class="btn promo-btn" href="/bux?tab=ads&video=${encodeURIComponent(v.id)}">📢 Продвинуть в буксе</a>
       <span class="muted">Автор может запустить рекламу видео, зрители смотрят и зарабатывают. <a href="/bux">Заработать на просмотрах →</a></span></div>
     <section class="dislikes">
@@ -74,6 +78,8 @@ api("/api/video?id=" + encodeURIComponent(id)).then((v) => {
             <p>${esc(c.text) || '<span class="muted">(текст в comment.md)</span>'}</p></div>
         </div>`).join("") || '<p class="muted">Пока никто не комментировал.</p>'}
     </section>`;
+
+  shopInit(v);
 
   // ---- части большого видео: следующая включается сама ----
   if (multi) {

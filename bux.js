@@ -20,6 +20,9 @@ const CFG = {
   minWithdraw: Math.round(Number(env("BUX_MIN_WITHDRAW", "10")) * 100),
   minTopup: Math.round(Number(env("BUX_MIN_TOPUP", "10")) * 100),
   minAccountDays: Number(env("BUX_MIN_ACCOUNT_DAYS", "7")),
+  paidToken: env("PAID_TOKEN"),      // classic-токен аккаунта сайта с правом repo: читает приватные anytubepaid_*
+  saleCommission: Math.min(0.9, Math.max(0, Number(env("SALE_COMMISSION", "0.37")))),
+  sbpPhone: env("SBP_PHONE"), sbpBank: env("SBP_BANK"), sbpName: env("SBP_NAME"),
 };
 if (!env("SESSION_SECRET")) console.warn("[bux] SESSION_SECRET не задан — после перезапуска всем придётся войти заново");
 
@@ -30,7 +33,8 @@ const DAY = 24 * 3600 * 1000;
 const rub = (k) => (k / 100).toFixed(2);
 
 // ─────────────── хранилище ───────────────
-const EMPTY = () => ({ v: 1, seq: 1, users: {}, campaigns: {}, views: {}, ipViews: {}, withdrawals: {}, topups: {}, ops: [] });
+const EMPTY = () => ({ v: 1, seq: 1, users: {}, campaigns: {}, views: {}, ipViews: {}, withdrawals: {}, topups: {}, ops: [],
+  purchases: {}, timepass: {}, sbp: {} });
 let db = EMPTY();
 let dbSha = null, dirty = false, saving = null, loaded = false;
 const LOCAL = path.join(process.cwd(), "data", "db.json");
@@ -195,6 +199,7 @@ export function mountBux(app, getVideos) {
   app.get("/api/bux/me", (req, res) => {
     const u = loaded ? sessionUser(req) : null;
     res.json({ user: pub(u), ready: loaded, loginEnabled: !!CFG.clientId, topupEnabled: !!(CFG.wallet && CFG.ymSecret),
+      sbpEnabled: !!CFG.sbpPhone,
       tariffs: Object.entries(TARIFFS).map(([s, p]) => ({ seconds: +s, price: p, reward: reward(p) })),
       minWithdraw: CFG.minWithdraw, minTopup: CFG.minTopup, minAccountDays: CFG.minAccountDays,
       payoutEmail: CFG.payoutEmail, commission: CFG.commission });
@@ -430,5 +435,203 @@ export function mountBux(app, getVideos) {
     u.banned = !!ban;
     await save(true);
     res.json({ ok: true });
+  });
+
+  // ═══════════════ МАГАЗИН: продажа видео, подписки на приложения, обои ═══════════════
+  const PERIODS = { hour: 3600e3, day: DAY, month: 30 * DAY, year: 365 * DAY };
+  const PERIOD_RU = { hour: "час", day: "день", month: "месяц", year: "год" };
+  const seller = (v) => {
+    const uid = "g" + v.ownerId;
+    return db.users[uid] || (db.users[uid] = { uid, login: v.owner, avatar: v.avatar, ad: 0, earn: 0, held: 0, views: 0, earned: 0, created: Date.now(), placeholder: true });
+  };
+  const funds = (u) => u.ad + u.earn;
+  function spend(u, amount) { // сначала пополненный баланс, потом заработанный
+    if (funds(u) < amount) return false;
+    const a = Math.min(u.ad, amount);
+    u.ad -= a; u.earn -= amount - a;
+    return true;
+  }
+  function payout(v, amount, note) {
+    const s = seller(v);
+    const net = Math.floor(amount * (1 - CFG.saleCommission));
+    s.earn += net; s.earned = (s.earned || 0) + net;
+    op(s.uid, "sale", net, note);
+  }
+  const isOwner = (u, v) => u && u.login.toLowerCase() === v.owner.toLowerCase();
+  const access = (u, v) => {
+    if (!u || !v.sale) return { owned: !v.sale, until: 0, timeUntil: 0 };
+    if (isOwner(u, v)) return { owned: true, until: 0, timeUntil: 0, owner: true };
+    const p = (db.purchases[u.uid] || {})[v.id];
+    const owned = !!p && (p.until === 0 || p.until > Date.now());
+    return { owned, until: p ? p.until : null, timeUntil: (db.timepass[u.uid] || {})[v.id] || 0 };
+  };
+  const findVideo = async (id) => (await getVideos()).videos.find((x) => x.id === id);
+
+  app.get("/api/shop/access", async (req, res) => {
+    const v = await findVideo(String(req.query.id || ""));
+    if (!v) return res.status(404).json({ error: "Не найдено" });
+    const u = loaded ? sessionUser(req) : null;
+    res.json({ ...access(u, v), loggedIn: !!u, funds: u ? funds(u) : 0, sale: v.sale, commission: CFG.saleCommission,
+      paidReady: !!CFG.paidToken });
+  });
+
+  app.post("/api/shop/buy", async (req, res) => {
+    const u = auth(req, res); if (!u) return;
+    const { id, plan } = await readBody(req);
+    const v = await findVideo(String(id || ""));
+    if (!v || !v.sale) return res.status(404).json({ error: "Товар не найден" });
+    if (isOwner(u, v)) return res.status(400).json({ error: "Это ваш товар, он и так доступен" });
+    let price, until, note;
+    if (plan === "buy" && v.sale.buy) { price = v.sale.buy; until = 0; note = `покупка «${v.title}»`; }
+    else if (PERIODS[plan] && v.sale.sub?.[plan]) {
+      price = v.sale.sub[plan];
+      const cur = (db.purchases[u.uid] || {})[v.id];
+      if (cur && cur.until === 0) return res.status(400).json({ error: "Уже куплено навсегда" });
+      until = Math.max(Date.now(), cur?.until || 0) + PERIODS[plan]; // продление складывается
+      note = `подписка «${v.title}» на ${PERIOD_RU[plan]}`;
+    } else return res.status(400).json({ error: "Такого варианта нет" });
+    if (!spend(u, price)) return res.status(402).json({ error: `Не хватает ${rub(price - funds(u))} ₽. Пополните баланс в буксе.` });
+    (db.purchases[u.uid] ||= {})[v.id] = { until, plan, t: Date.now() };
+    op(u.uid, "buy", -price, note);
+    payout(v, price, `продажа: ${note}`);
+    await save(true);
+    res.json({ ok: true, ...access(u, v), funds: funds(u) });
+  });
+
+  // почасовой просмотр: поминутное списание, пока видео играет
+  app.post("/api/shop/tick", async (req, res) => {
+    const u = auth(req, res); if (!u) return;
+    const v = await findVideo(String((await readBody(req)).id || ""));
+    if (!v || !v.sale?.per_hour) return res.status(404).json({ error: "Почасовой просмотр недоступен" });
+    const a = access(u, v);
+    if (a.owned) return res.json({ ok: true, owned: true });
+    const now = Date.now(), tp = (db.timepass[u.uid] ||= {});
+    // клиент спрашивает каждые 30 с; следующая минута списывается, только когда оплаченного времени осталось < 20 с
+    // (минута за минуту; паузы не оплачиваются; запас 25 с на выдаче не даёт видео оборваться между тиками)
+    if ((tp[v.id] || 0) - now > 20e3) return res.json({ ok: true, timeUntil: tp[v.id], funds: funds(u) });
+    const cost = Math.max(1, Math.round(v.sale.per_hour / 60));
+    if (!spend(u, cost)) return res.status(402).json({ error: "Баланс закончился — пополните, чтобы смотреть дальше" });
+    tp[v.id] = Math.max(tp[v.id] || 0, now) + 60e3;
+    opMerge(u.uid, "watch", -cost, `просмотр «${v.title}»`);
+    const s = seller(v), net = cost * (1 - CFG.saleCommission);
+    s.earnFrac = (s.earnFrac || 0) + net; const whole = Math.floor(s.earnFrac); s.earnFrac -= whole;
+    s.earn += whole; s.earned = (s.earned || 0) + whole;
+    opMerge(s.uid, "sale", whole, `просмотры «${v.title}»`);
+    save();
+    res.json({ ok: true, charged: cost, timeUntil: tp[v.id], funds: funds(u) });
+  });
+  function opMerge(uid, type, amount, note) { // поминутные списания складываем в одну строку истории
+    const last = [...db.ops].reverse().find((o) => o.uid === uid);
+    if (last && last.type === type && last.note === note && Date.now() - last.t < 3 * 3600e3) { last.amount += amount; last.t = Date.now(); }
+    else op(uid, type, amount, note);
+  }
+
+  // выдача платных файлов из приватных репозиториев — только тем, у кого есть доступ
+  async function streamPaid(req, res, v, f) {
+    if (!CFG.paidToken) return res.status(503).send("Платные файлы не настроены (PAID_TOKEN)");
+    const url = `${f.lfs ? "https://media.githubusercontent.com/media" : "https://raw.githubusercontent.com"}/${v.owner}/${f.repo}/HEAD/${f.path.split("/").map(encodeURIComponent).join("/")}`;
+    const up = await fetch(url, { headers: { Authorization: `token ${CFG.paidToken}`, ...(req.headers.range ? { Range: req.headers.range } : {}) } }).catch(() => null);
+    if (!up || (!up.ok && up.status !== 206)) return res.status(502).send("Файл недоступен. Автор должен пригласить аккаунт сайта в приватный репозиторий.");
+    res.statusCode = up.status;
+    for (const h of ["content-type", "content-length", "content-range"]) { const x = up.headers.get(h); if (x) res.setHeader(h, x); }
+    if (/\.(mp4|m4v)$/i.test(f.path)) res.setHeader("Content-Type", "video/mp4");
+    if (/\.webm$/i.test(f.path)) res.setHeader("Content-Type", "video/webm");
+    res.setHeader("Accept-Ranges", "bytes");
+    res.setHeader("Cache-Control", "private, no-store");
+    if (req.query.download) res.setHeader("Content-Disposition", `attachment; filename*=UTF-8''${encodeURIComponent(f.name || f.path.split("/").pop())}`);
+    const { Readable } = await import("node:stream");
+    Readable.fromWeb(up.body).pipe(res);
+    req.on("close", () => up.body?.cancel?.().catch(() => {}));
+  }
+  app.get("/paid/part", async (req, res) => {
+    if (!guard(res)) return;
+    const v = await findVideo(String(req.query.id || ""));
+    const f = v?._paid?.parts?.[Number(req.query.n) - 1];
+    if (!f) return res.status(404).send("Не найдено");
+    const u = sessionUser(req), a = access(u, v);
+    if (!u) return res.status(401).send("Войдите через GitHub");
+    if (!a.owned && !(a.timeUntil > Date.now() - 25e3)) return res.status(402).send("Нет доступа: купите видео или включите почасовой просмотр");
+    streamPaid(req, res, v, f);
+  });
+  app.get("/paid/file", async (req, res) => {
+    if (!guard(res)) return;
+    const v = await findVideo(String(req.query.id || ""));
+    const f = v?._paid?.files?.[Number(req.query.f) || 0];
+    if (!f) return res.status(404).send("Не найдено");
+    const u = sessionUser(req);
+    if (!u) return redirect(res, `/auth/login?back=${encodeURIComponent("/watch?v=" + encodeURIComponent(v.id))}`);
+    if (!access(u, v).owned) return res.status(402).send("Нет доступа: сначала купите или оформите подписку");
+    req.query.download = "1";
+    streamPaid(req, res, v, f);
+  });
+
+  // сайт сам принимает приглашения в приватные репозитории anytubepaid_*
+  async function acceptInvites() {
+    if (!CFG.paidToken) return;
+    try {
+      const r = await fetch("https://api.github.com/user/repository_invitations?per_page=100", { headers: { Authorization: `token ${CFG.paidToken}`, "User-Agent": "anytube-bux", Accept: "application/vnd.github+json" } });
+      if (!r.ok) return console.warn("[shop] приглашения: GitHub", r.status);
+      for (const inv of await r.json()) {
+        if (!String(inv.repository?.name || "").toLowerCase().startsWith("anytubepaid_")) continue;
+        const a = await fetch(`https://api.github.com/user/repository_invitations/${inv.id}`, { method: "PATCH", headers: { Authorization: `token ${CFG.paidToken}`, "User-Agent": "anytube-bux" } });
+        console.log(`[shop] приглашение в ${inv.repository.full_name}: ${a.status === 204 ? "принято" : a.status}`);
+      }
+    } catch (e) { console.warn("[shop] приглашения:", e.message); }
+  }
+  acceptInvites();
+  setInterval(acceptInvites, 5 * 60e3).unref?.();
+
+  app.get("/api/shop/my", (req, res) => {
+    const u = auth(req, res); if (!u) return;
+    res.json({ purchases: db.purchases[u.uid] || {} });
+  });
+
+  // ═══════════════ ПОПОЛНЕНИЕ ПО СБП (ручное подтверждение администратором) ═══════════════
+  app.post("/api/bux/sbp", async (req, res) => {
+    const u = auth(req, res); if (!u) return;
+    if (!CFG.sbpPhone) return res.status(400).json({ error: "Пополнение по СБП не настроено" });
+    const amount = Math.round(Number(String((await readBody(req)).amount).replace(",", ".")) * 100);
+    if (!(amount >= CFG.minTopup && amount <= 1_500_000)) return res.status(400).json({ error: `Сумма: от ${rub(CFG.minTopup)} до 15000 ₽` });
+    const open = Object.values(db.sbp).filter((x) => x.uid === u.uid && x.status !== "done" && x.status !== "rejected");
+    if (open.length >= 3) return res.status(429).json({ error: "У вас уже 3 непроверенные заявки — дождитесь проверки" });
+    const code = "AT" + crypto.randomInt(100000, 999999);
+    const x = { id: id("s"), uid: u.uid, login: u.login, amount, code, status: "new", created: Date.now() };
+    db.sbp[x.id] = x;
+    await save(true);
+    res.json({ ok: true, request: x, phone: CFG.sbpPhone, bank: CFG.sbpBank, name: CFG.sbpName });
+  });
+  app.post("/api/bux/sbp/sent", async (req, res) => { // «Я перевёл»
+    const u = auth(req, res); if (!u) return;
+    const x = db.sbp[(await readBody(req)).id];
+    if (!x || x.uid !== u.uid || x.status !== "new") return res.status(400).json({ error: "Заявка не найдена" });
+    x.status = "sent"; x.sent = Date.now();
+    await save(true);
+    res.json({ ok: true });
+  });
+  app.get("/api/bux/sbp", (req, res) => {
+    const u = auth(req, res); if (!u) return;
+    res.json({ requests: Object.values(db.sbp).filter((x) => x.uid === u.uid).sort((a, b) => b.created - a.created).slice(0, 20),
+      phone: CFG.sbpPhone, bank: CFG.sbpBank, name: CFG.sbpName });
+  });
+  app.post("/api/bux/admin/sbp", async (req, res) => {
+    if (!admin(req, res)) return;
+    const { sid, action, amount } = await readBody(req);
+    const x = db.sbp[sid];
+    if (!x || x.status === "done" || x.status === "rejected") return res.status(400).json({ error: "Заявка не найдена или уже обработана" });
+    if (action === "confirm") {
+      const real = amount ? Math.round(Number(String(amount).replace(",", ".")) * 100) : x.amount; // сколько реально пришло
+      if (!(real > 0)) return res.status(400).json({ error: "Неверная сумма" });
+      const u = db.users[x.uid];
+      u.ad += real; x.status = "done"; x.credited = real;
+      db.topups["sbp:" + x.id] = { uid: u.uid, amount: real, t: Date.now() };
+      op(u.uid, "topup", real, `СБП, код ${x.code}`);
+    } else { x.status = "rejected"; }
+    x.done = Date.now();
+    await save(true);
+    res.json({ ok: true });
+  });
+  app.get("/api/bux/admin/sbp", (req, res) => {
+    if (!admin(req, res)) return;
+    res.json({ requests: Object.values(db.sbp).sort((a, b) => (b.status === "sent") - (a.status === "sent") || b.created - a.created).slice(0, 300) });
   });
 }

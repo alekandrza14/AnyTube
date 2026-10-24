@@ -88,7 +88,41 @@ async function manifestVideo(repo, branch, files) {
       src: videoSrc(owner, p.repo, p.path), file: p.path })),
     descChars, descChunks: chunks.length,
     _desc: chunks.map((c) => ({ repo: c.repo, path: c.path, size: Number(c.size) || 0 })),
+    ...shopInfo(m, owner, repo, okPath),
   }];
+}
+
+// Магазин: тип (видео / приложение / обои), цены в копейках, бесплатные файлы и (скрыто) платные файлы
+const KINDS = new Set(["video", "app", "wallpaper"]);
+const PAID_PREFIX = "anytubepaid_";
+function shopInfo(m, owner, repo, okPath) {
+  const kind = KINDS.has(m.kind) ? m.kind : "video";
+  const okPub = (f) => f && typeof f.repo === "string" && f.repo.toLowerCase().startsWith(PREFIX) && okPath(f.path);
+  const okPaid = (f) => f && typeof f.repo === "string" && f.repo.toLowerCase().startsWith(PAID_PREFIX) && /^[A-Za-z0-9._-]+$/.test(f.repo) && okPath(f.path);
+  const int = (x) => (Number.isInteger(x) && x > 0 && x <= 100_000_000 ? x : null);
+  const s = m.sale && typeof m.sale === "object" ? m.sale : {};
+  const sale = {};
+  if (int(s.per_hour) && kind === "video") sale.per_hour = s.per_hour;
+  if (int(s.buy)) sale.buy = s.buy;
+  if (kind === "app" && s.sub && typeof s.sub === "object") {
+    const sub = Object.fromEntries(["hour", "day", "month", "year"].filter((p) => int(s.sub[p])).map((p) => [p, s.sub[p]]));
+    if (Object.keys(sub).length) sale.sub = sub;
+  }
+  const paid = m.paid && typeof m.paid === "object" ? m.paid : {};
+  const pParts = (paid.parts || []).filter(okPaid).filter((p) => VIDEO_EXT.test(p.path));
+  const pFiles = (paid.files || []).filter(okPaid);
+  const pub = (m.files || []).filter(okPub);
+  const isPaid = Object.keys(sale).length > 0 && (pParts.length || pFiles.length);
+  const fileUrl = (f) => `${f.lfs ? LFS_RAW : RAW}/${owner}/${f.repo}/HEAD/${f.path.split("/").map(encodeURIComponent).join("/")}`;
+  return {
+    kind, ownerId: repo.owner.id,
+    sale: isPaid ? sale : null,
+    trailer: !!(isPaid && kind === "video" && m.trailer),
+    files: pub.map((f) => ({ name: String(f.name || path.basename(f.path)).slice(0, 200), size: Number(f.size) || 0, url: fileUrl(f) })),
+    paidParts: isPaid ? pParts.map((p, i) => ({ n: i + 1, duration: Number(p.duration) || 0, size: Number(p.size) || 0 })) : [],
+    paidFiles: isPaid ? pFiles.map((f, i) => ({ i, name: String(f.name || path.basename(f.path)).slice(0, 200), size: Number(f.size) || 0 })) : [],
+    _paid: isPaid ? { parts: pParts, files: pFiles } : null,
+  };
 }
 
 async function repoVideos(repo, files) {
@@ -113,6 +147,7 @@ async function repoVideos(repo, files) {
     .filter((f) => VIDEO_EXT.test(f.path))
     .map((f) => ({
       descChunks: desc.length, descChars: 0, descBytes, _desc: desc,
+      kind: "video", ownerId: repo.owner.id, sale: null, files: [], paidParts: [], paidFiles: [], _paid: null,
       id: `${repo.full_name}/${f.path}`,
       owner: repo.owner.login,
       avatar: repo.owner.avatar_url,
@@ -223,9 +258,11 @@ app.get("/api/videos", async (req, res) => {
   const sort = req.query.sort === "new" ? "new" : "top";
   let list = videos;
   if (author) list = list.filter((v) => v.owner.toLowerCase() === author);
+  const kind = (req.query.kind || "").toString();
+  if (kind) list = list.filter((v) => v.kind === kind);
   if (q) list = list.filter((v) => `${v.title} ${v.repoTitle} ${v.owner} ${v.path}`.toLowerCase().includes(q));
   list = [...list].sort(sort === "new" ? byNew : byStars)
-    .map(({ comments, parts, _desc, dislikes, ...v }) => ({ ...v, partCount: parts ? parts.length : 1,
+    .map(({ comments, parts, _desc, _paid, dislikes, ...v }) => ({ ...v, partCount: parts ? parts.length : 1,
       commentCount: (comments || []).length, dislikeCount: dislikes ? dislikes.total : 0, dislikeAvg: dislikes ? dislikes.avg : 0 })); // в ленте только числа
   res.json({ updated: at, error: error || (tokenBad ? "GITHUB_TOKEN неверный, сайт работает без него (лимит 60 запросов/час)" : null), sort, count: list.length, videos: list });
 });
@@ -234,7 +271,7 @@ app.get("/api/video", async (req, res) => {
   const { videos } = await getVideos();
   const v = videos.find((x) => x.id === req.query.id);
   if (!v) return res.status(404).json({ error: "Видео не найдено" });
-  const { _desc, ...pub } = v;
+  const { _desc, _paid, ...pub } = v;
   res.json({ ...pub, dislikeLabels: DISLIKE_LABELS });
 });
 

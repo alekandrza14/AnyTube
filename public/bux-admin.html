@@ -4,10 +4,12 @@
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Админка букса — AnyTube</title>
 <link rel="stylesheet" href="/style.css">
+<link rel="icon" type="image/png" href="/favicon.png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
 </head>
 <body>
 <header>
-  <a class="logo" href="/">Any<b>Tube</b></a>
+  <a class="logo" href="/"><img src="/logo-emblem.png" alt="">Any<b>Tube</b></a>
   <a class="btn ghost" href="/bux">← В букс</a>
 </header>
 <main class="bux">
@@ -47,6 +49,10 @@ async function load() {
           : { paid: "✅ выплачено", rejected: "❌ отклонено" }[w.status]}</td></tr>`).join("")}</table>` : `<p class="muted">Заявок нет.</p>`}
     </section>
 
+    <section class="bx-box"><h2>📱 Пополнения по СБП</h2>
+      <p class="muted">Найдите перевод в приложении банка по коду в комментарии и нажмите «Зачислить». Если пришла другая сумма, впишите её.</p>
+      <div id="sbpAdm" class="muted">Загрузка…</div>
+    </section>
     <section class="bx-box"><h2>💳 Ручное начисление</h2>
       <p class="muted">Если пополнение пришло без метки или уведомления ЮMoney не настроены. Минус — списание.</p>
       <form class="form bx-inline" id="cr">
@@ -76,6 +82,17 @@ async function load() {
   }));
   root.querySelectorAll("[data-stop]").forEach((b) => (b.onclick = async () => { await post("/api/bux/campaigns/stop", { cid: b.dataset.stop }); load(); }));
   root.querySelectorAll("[data-ban]").forEach((b) => (b.onclick = async () => { if (confirm("Заблокировать пользователя?")) { await post("/api/bux/admin/ban", { uid: b.dataset.ban, ban: true }); load(); } }));
+  api("/api/bux/admin/sbp").then((d) => {
+    const st = { new: "🆕 не оплачено", sent: "⏳ пользователь перевёл", done: "✅ зачислено", rejected: "❌ отклонено" };
+    document.getElementById("sbpAdm").innerHTML = (d.requests || []).length ? `<table class="bx-table"><tr><th>Дата</th><th>Логин</th><th>Сумма</th><th>Код</th><th>Статус</th><th></th></tr>
+      ${d.requests.map((x) => `<tr><td>${dt(x.created)}</td><td>${esc(x.login)}</td><td>${R(x.amount)}</td><td><b>${esc(x.code)}</b></td><td>${st[x.status]}</td>
+        <td>${x.status === "new" || x.status === "sent" ? `<input class="sbp-sum" data-s="${x.id}" placeholder="${(x.amount / 100).toFixed(2)}" style="width:80px"> <button class="btn sm" data-sbp="${x.id}" data-a="confirm">Зачислить</button> <button class="btn ghost sm" data-sbp="${x.id}" data-a="reject">Отклонить</button>` : ""}</td></tr>`).join("")}</table>` : "Заявок нет.";
+    document.querySelectorAll("[data-sbp]").forEach((b) => (b.onclick = async () => {
+      const amount = document.querySelector(`.sbp-sum[data-s="${b.dataset.sbp}"]`)?.value;
+      const r = await post("/api/bux/admin/sbp", { sid: b.dataset.sbp, action: b.dataset.a, amount });
+      r.error ? alert(r.error) : load();
+    }));
+  });
   const cr = document.getElementById("cr");
   cr.onsubmit = async (e) => { e.preventDefault(); const r = await post("/api/bux/admin/credit", Object.fromEntries(new FormData(cr)));
     document.getElementById("crm").textContent = r.error ? "❌ " + r.error : "✅ Начислено"; if (!r.error) setTimeout(load, 700); };

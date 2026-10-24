@@ -130,3 +130,20 @@ main{max-width:1400px;margin:0 auto;padding:24px 20px}
 .promo{display:flex;flex-wrap:wrap;gap:10px;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 14px;margin:12px 0}
 .promo-btn{background:#2ea05a}.promo a:not(.btn){color:#5fd38a;font-weight:600}
 .tabs a{cursor:pointer}
+
+/* ── логотип, магазин ── */
+.logo img{height:30px;width:30px;margin-right:2px;vertical-align:middle}
+.thumb .kb{position:absolute;top:6px;left:6px;background:rgba(0,0,0,.82);color:#fff;font-size:12px;font-weight:700;padding:2px 7px;border-radius:5px}
+.tabs.kinds{margin-top:-6px}
+.shop{background:linear-gradient(135deg,rgba(232,22,29,.14),rgba(232,22,29,.03));border:1px solid rgba(232,22,29,.45);border-radius:12px;padding:12px 14px;margin:12px 0}
+.shop-head{margin-bottom:6px;font-size:15px}
+.shop-tag{background:#e8161d;color:#fff;border-radius:5px;padding:1px 7px;font-size:12px;margin-left:6px}
+.shop-tag.free{background:#2ea05a}
+.shop-row{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0}
+.shop-row .btn{display:inline-grid;text-align:left}
+.shop-row .btn small{font-weight:400;font-size:11px;opacity:.85}
+.shop-dl small{opacity:.8;font-weight:400;margin-left:4px}
+.shop a:not(.btn){color:#ff7a7f;font-weight:600}
+.sbp-card{background:var(--bg);border:1px dashed #5fd38a;border-radius:10px;padding:12px;margin:8px 0;line-height:1.7}
+.sbp-card b{font-size:18px}
+.sbp-code{font-size:22px;letter-spacing:2px;color:#5fd38a}
