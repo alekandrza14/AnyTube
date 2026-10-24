@@ -7,6 +7,39 @@ import { mountBux, isHidden, likesOf, isBanned, isCommentHidden, syncApprovals, 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 
+// ─── Защита от падений: сеть до GitHub иногда обрывается (ETIMEDOUT, ECONNRESET) ───
+// Express 4 не ловит ошибки async-обработчиков — без этого один таймаут ронял весь сайт.
+process.on("unhandledRejection", (e) => console.error("[anytube] необработанная ошибка:", e?.code || "", e?.message || e));
+let listening = false; // ошибка при запуске — честно падаем, Render перезапустит
+process.on("uncaughtException", (e) => {
+  console.error("[anytube] исключение:", e?.code || "", e?.stack || e);
+  if (!listening) process.exit(1);
+});
+for (const m of ["get", "post", "put", "delete", "all", "use"]) {
+  if (typeof app[m] !== "function") continue;
+  const orig = app[m].bind(app);
+  app[m] = (...args) => orig(...args.map((fn) => (typeof fn === "function" && fn.length < 4 ? (req, res, next) => {
+    try {
+      const r = fn(req, res, next);
+      if (r && typeof r.catch === "function") r.catch((e) => sendNetError(res, e));
+      return r;
+    } catch (e) { sendNetError(res, e); }
+  } : fn)));
+}
+function sendNetError(res, e) {
+  const code = e?.cause?.code || e?.code || "";
+  console.error("[anytube] ошибка запроса:", code, e?.message || e);
+  if (res.headersSent) { try { res.destroy(); } catch {} return; }
+  res.status(502).json({ error: `GitHub временно недоступен${code ? " (" + code + ")" : ""}, попробуйте ещё раз` });
+}
+// поток из GitHub → браузер; обрыв с любой стороны не роняет сервер
+function pipeWeb(body, res) {
+  const s = Readable.fromWeb(body);
+  s.on("error", (e) => { console.error("[anytube] поток прерван:", e?.code || e?.message); res.destroy(); });
+  res.on("close", () => s.destroy());
+  s.pipe(res);
+}
+
 const PORT = process.env.PORT || 3000;
 // очень желателен: без него лимит 60 запросов/час. Лишние пробелы и "Bearer " срезаются.
 const TOKEN = (process.env.GITHUB_TOKEN || "").trim().replace(/^Bearer\s+/i, "");
@@ -350,8 +383,7 @@ app.get(/^\/video\/([^/]+)\/([^/]+)\/(.+)$/, async (req, res) => {
   if (req.query.download) {
     res.setHeader("Content-Disposition", `attachment; filename="${decodeURIComponent(filePath.split("/").pop())}"`);
   }
-  Readable.fromWeb(upstream.body).pipe(res);
-  req.on("close", () => upstream.body?.cancel?.().catch(() => {}));
+  pipeWeb(upstream.body, res);
 });
 
 // ─── Букс: реклама видео за деньги, заработок на просмотрах (bux.js) ───
@@ -361,6 +393,7 @@ app.use(express.static(path.join(__dirname, "public"), { extensions: ["html"] })
 app.get("/healthz", (_, res) => res.send("ok"));
 
 app.listen(PORT, () => {
+  listening = true;
   console.log(`AnyTube слушает порт ${PORT}${TOKEN ? "" : " (без GITHUB_TOKEN — лимиты GitHub очень маленькие!)"}`);
   getVideos();
 });

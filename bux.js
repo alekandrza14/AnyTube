@@ -614,8 +614,10 @@ export function mountBux(app, getVideos) {
     res.setHeader("Cache-Control", "private, no-store");
     if (req.query.download) res.setHeader("Content-Disposition", `attachment; filename*=UTF-8''${encodeURIComponent(f.name || f.path.split("/").pop())}`);
     const { Readable } = await import("node:stream");
-    Readable.fromWeb(up.body).pipe(res);
-    req.on("close", () => up.body?.cancel?.().catch(() => {}));
+    const st = Readable.fromWeb(up.body);
+    st.on("error", (e) => { console.error("[shop] поток прерван:", e?.code || e?.message); res.destroy(); });
+    res.on("close", () => st.destroy());
+    st.pipe(res);
   }
   app.get("/paid/part", async (req, res) => {
     if (!guard(res)) return;
