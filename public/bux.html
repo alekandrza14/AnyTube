@@ -98,12 +98,12 @@ async function earn() {
           <p class="muted" id="dm-${esc(t.id)}"></p>
         </div>`).join("")}</div>` : `<p class="muted">Заданий на дизлайки сейчас нет.</p>`}
     </section>
-    <section class="bx-box"><h2>👀 Просмотры и ❤ лайки</h2>
+    <section class="bx-box"><h2>👀 Просмотры и ➕ плюсики</h2>
       <p class="muted">Откройте видео и смотрите, пока идёт таймер. Вкладка должна быть активной, видео не на паузе. В конце нажмите цифру. Каждое видео можно смотреть раз в 24 часа.</p>
       ${views.length ? `<div class="bx-tasks">${views.map((t) => `
         <a class="bx-task" href="/bux-view?c=${encodeURIComponent(t.id)}">
           <img src="${esc(t.avatar)}&s=64" alt="">
-          <div><b>${esc(t.title)}</b><small>${esc(t.owner)} · ${t.type === "like" ? "❤ посмотреть 15 с и лайкнуть" : t.seconds + " с"}</small></div>
+          <div><b>${esc(t.title)}</b><small>${esc(t.owner)} · ${t.type === "like" ? "➕ посмотреть 15 с и поставить плюсик" : t.seconds + " с"}</small></div>
           <span class="bx-rew">+${R(t.reward)}</span>
         </a>`).join("")}</div>` : `<p class="muted">Сейчас рекламы нет: всё уже просмотрено. Загляните позже!</p>`}
     </section>`;
@@ -129,14 +129,14 @@ async function ads() {
   el.innerHTML = `
     <section class="bx-box">
       <h2>Новый заказ</h2>
-      <div class="tabs" id="otype"><a data-o="view">👀 Просмотры своего видео</a><a data-o="like">❤ Лайки любому видео</a><a data-o="dislike">👎 Дизлайки любому видео</a></div>
+      <div class="tabs" id="otype"><a data-o="view">👀 Просмотры своего видео</a><a data-o="like">➕ Плюсики любому видео</a><a data-o="dislike">👎 Дизлайки любому видео</a></div>
       <div id="oform"></div>
     </section>
     <section class="bx-box">
       <h2>Мои заказы</h2>
       ${d.campaigns.length ? `<table class="bx-table"><tr><th>Видео</th><th>Что</th><th>Выполнено</th><th>Осталось</th><th>Статус</th><th></th></tr>
         ${d.campaigns.map((c) => `<tr><td><a href="/watch?v=${encodeURIComponent(c.video)}">${esc(c.video.split("/").pop())}</a></td>
-          <td>${c.type === "dislike" ? `${LV_EMOJI[c.level]} дизлайк ур. ${c.level}` : c.type === "like" ? "❤ лайк" : `👀 ${c.seconds} с`}</td>
+          <td>${c.type === "dislike" ? `${LV_EMOJI[c.level]} дизлайк ур. ${c.level}` : c.type === "like" ? "➕ плюсик" : `👀 ${c.seconds} с`}</td>
           <td>${c.views} из ${Math.round(c.budget / c.price)}</td><td>${R(c.left)}</td>
           <td>${{ active: "🟢 идёт", done: "✅ завершён", stopped: "⏹ остановлен" }[c.status]}</td>
           <td>${c.status === "active" ? `<button class="btn ghost sm" data-stop="${c.id}">Остановить</button>` : ""}</td></tr>`).join("")}</table>`
@@ -160,10 +160,10 @@ async function ads() {
       box.innerHTML = `
       <form class="form" id="cf">
         <label>Ссылка на любое видео AnyTube <input name="video" required placeholder="${location.origin}/watch?v=…" value="${esc(pre ? location.origin + "/watch?v=" + encodeURIComponent(pre) : "")}"></label>
-        <label>Сколько лайков <input name="count" type="number" min="1" max="10000" value="10"></label>
-        <p>${R(li.price)} за лайк · итого: <b id="cost"></b> · на балансе ${R(ME.ad)}</p>
-        <p class="muted">Исполнитель смотрит видео 15 секунд, после этого ставится лайк ❤. Один человек — один лайк на видео. Лайки поднимают видео в «Топе».</p>
-        <div class="bk-row"><button class="btn" type="submit">Заказать лайки</button><button class="btn ghost" type="button" onclick="show('wallet')">Пополнить баланс</button></div>
+        <label>Сколько плюсиков <input name="count" type="number" min="1" max="10000" value="10"></label>
+        <p>${R(li.price)} за плюсик · итого: <b id="cost"></b> · на балансе ${R(ME.ad)}</p>
+        <p class="muted">Исполнитель смотрит видео 15 секунд, после этого ставится плюсик ➕. Один человек — один плюсик на видео. Плюсики поднимают видео в «Топе».</p>
+        <div class="bk-row"><button class="btn" type="submit">Заказать плюсики</button><button class="btn ghost" type="button" onclick="show('wallet')">Пополнить баланс</button></div>
         <p class="muted" id="cmsg"></p>
       </form>`;
     } else {
@@ -205,7 +205,7 @@ async function ads() {
 async function wallet() {
   const el = document.getElementById("tab");
   const h = await api("/api/bux/history");
-  const names = { like: "❤ Лайк", dislike: "👎 Дизлайк", buy: "🛒 Покупка", sale: "💰 Продажа", watch: "⏱ Почасовой просмотр", view: "👀 Просмотр", campaign: "📢 Реклама", refund: "↩ Возврат", "to-ad": "🔁 На рекламу", topup: "💳 Пополнение", withdraw: "📤 Вывод", paid: "✅ Выплачено", rejected: "↩ Отклонено", admin: "🛠 Администратор" };
+  const names = { like: "➕ Плюсик", dislike: "👎 Дизлайк", buy: "🛒 Покупка", sale: "💰 Продажа", watch: "⏱ Почасовой просмотр", view: "👀 Просмотр", campaign: "📢 Реклама", refund: "↩ Возврат", "to-ad": "🔁 На рекламу", topup: "💳 Пополнение", withdraw: "📤 Вывод", paid: "✅ Выплачено", rejected: "↩ Отклонено", admin: "🛠 Администратор" };
   el.innerHTML = `
     ${qs.get("topup") ? `<div class="bk-ok">✅ Спасибо! Деньги зачислятся на рекламный баланс, как только ЮMoney подтвердит перевод (обычно за минуту).</div>` : ""}
     <div class="bx-grid">

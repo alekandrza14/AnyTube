@@ -70,7 +70,7 @@ async function load() {
     </section>
     <section class="bx-box"><h2>📢 Рекламные кампании</h2>
       ${d.campaigns.length ? `<table class="bx-table"><tr><th>Дата</th><th>Логин</th><th>Видео</th><th>Что</th><th>Выполнено</th><th>Осталось</th><th>Статус</th><th></th></tr>
-      ${d.campaigns.map((c) => `<tr><td>${dt(c.created)}</td><td>${esc(c.login || "")}</td><td><a href="/watch?v=${encodeURIComponent(c.video)}">${esc(c.video)}</a></td><td>${c.type === "dislike" ? `👎 дизлайк ур. ${c.level}` : c.type === "like" ? "❤ лайк" : `👀 ${c.seconds} с`}</td>
+      ${d.campaigns.map((c) => `<tr><td>${dt(c.created)}</td><td>${esc(c.login || "")}</td><td><a href="/watch?v=${encodeURIComponent(c.video)}">${esc(c.video)}</a></td><td>${c.type === "dislike" ? `👎 дизлайк ур. ${c.level}` : c.type === "like" ? "➕ плюсик" : `👀 ${c.seconds} с`}</td>
         <td>${c.views}</td><td>${R(c.left)}</td><td>${c.status}</td><td>${c.status === "active" ? `<button class="btn ghost sm" data-stop="${c.id}">Остановить</button>` : ""}</td></tr>`).join("")}</table>` : `<p class="muted">Кампаний нет.</p>`}
     </section>
 

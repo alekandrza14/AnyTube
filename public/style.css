@@ -195,6 +195,7 @@ main{max-width:1400px;margin:0 auto;padding:24px 20px}
 .lv-pick input:checked+span{color:#fff;border-color:transparent;font-weight:700}
 
 /* ── лайки ── */
-.likes{color:#ff5a7a;font-weight:700}
+.likes{color:#5fd38a;font-weight:800}
 .like-btn{background:#2a2a33}
-.like-btn.on{background:linear-gradient(135deg,#ff3b5c,#ff7a45)}
+.like-btn.on{background:#2ea05a}
+.like-btn .plus{font-size:18px;line-height:1}
