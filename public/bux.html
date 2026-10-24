@@ -54,7 +54,7 @@ async function boot() {
       <div><span>Просмотров</span><b>${ME.views}</b><small>всего заработано ${R(ME.earned)}</small></div>
     </div>
     <div class="tabs">
-      <a data-t="earn">👀 Заработать</a><a data-t="ads">📢 Реклама</a><a data-t="wallet">👛 Кошелёк</a>
+      <a data-t="earn">💸 Заработать</a><a data-t="ads">📢 Заказать</a><a data-t="wallet">👛 Кошелёк</a>
     </div>
     <div id="tab"></div>`;
   document.querySelectorAll(".tabs a").forEach((a) => (a.onclick = () => show(a.dataset.t)));
@@ -69,63 +69,124 @@ function show(t) {
 }
 
 // ── Заработать ──
+const LV_EMOJI = { 1: "😕", 2: "😒", 3: "👎", 4: "😖", 5: "🤮" };
 async function earn() {
   const el = document.getElementById("tab");
-  el.innerHTML = `<p class="status">Ищем рекламу…</p>`;
+  el.innerHTML = `<p class="status">Ищем задания…</p>`;
   const d = await api("/api/bux/tasks");
   if (d.error) { el.innerHTML = `<p class="empty">${esc(d.error)}</p>`; return; }
+  const views = d.tasks.filter((t) => t.type !== "dislike"), dis = d.tasks.filter((t) => t.type === "dislike");
   el.innerHTML = `
-    ${d.canEarn ? "" : `<div class="note">Зарабатывать можно с GitHub-аккаунта старше ${CONF.minAccountDays} дней (защита от ботов). Рекламировать свои видео можно уже сейчас.</div>`}
-    <p class="muted">Откройте видео и смотрите, пока идёт таймер. Вкладка должна быть активной, видео не на паузе. В конце нажмите цифру, которую покажет сайт. Каждое видео можно смотреть раз в 24 часа.</p>
-    ${d.tasks.length ? `<div class="bx-tasks">${d.tasks.map((t) => `
-      <a class="bx-task" href="/bux-view?c=${encodeURIComponent(t.id)}">
-        <img src="${esc(t.avatar)}&s=64" alt="">
-        <div><b>${esc(t.title)}</b><small>${esc(t.owner)} · ${t.seconds} с</small></div>
-        <span class="bx-rew">+${R(t.reward)}</span>
-      </a>`).join("")}</div>` : `<div class="empty">Сейчас рекламы нет: всё уже просмотрено. Загляните позже!</div>`}`;
+    ${d.canEarn ? "" : `<div class="note">Зарабатывать можно с GitHub-аккаунта старше ${CONF.minAccountDays} дней (защита от ботов). Заказывать рекламу можно уже сейчас.</div>`}
+    <section class="bx-box"><h2>👎 Дизлайки <span class="muted" style="font-size:14px;font-weight:400">· нужна программа AnyTube Uploader</span></h2>
+      ${dis.length ? `<div class="bx-tasks">${dis.map((t) => `
+        <div class="bx-task bx-dis" data-dis="${esc(t.id)}">
+          <span class="lv lv${t.level}">${LV_EMOJI[t.level]}<b>${t.level}</b></span>
+          <div><b>${esc(t.title)}</b><small>${esc(t.owner)} · дизлайк уровня <b>${t.level}</b> «${esc(t.levelLabel.replace(/^\S+\s/, ""))}»</small></div>
+          <span class="bx-rew">+${R(t.reward)}</span>
+        </div>
+        <div class="dis-steps" id="ds-${esc(t.id)}" hidden>
+          <ol>
+            <li>Скачайте и запустите <a href="/AnyTube-Uploader.zip">AnyTube Uploader</a> (один раз; в «Настройках» вставьте токен GitHub).</li>
+            <li>Скопируйте ссылку на видео: <button class="btn ghost sm" data-copy="${esc(location.origin + "/watch?v=" + encodeURIComponent(t.video))}">📋 Скопировать ссылку</button></li>
+            <li>В программе откройте вкладку <b>«Дизлайк»</b>, вставьте ссылку и выберите
+              <span class="lv-big lv${t.level}">${LV_EMOJI[t.level]} уровень ${t.level} — ${esc(t.levelLabel.replace(/^\S+\s/, ""))}</span>
+              <br><span class="muted">⚠ Именно уровень ${t.level}! С другим уровнем задание не засчитается.</span></li>
+            <li>Нажмите «Поставить дизлайк», дождитесь «готово ✅» и вернитесь сюда.</li>
+          </ol>
+          <button class="btn" data-check="${esc(t.id)}">✅ Я поставил — проверить</button>
+          <p class="muted" id="dm-${esc(t.id)}"></p>
+        </div>`).join("")}</div>` : `<p class="muted">Заданий на дизлайки сейчас нет.</p>`}
+    </section>
+    <section class="bx-box"><h2>👀 Просмотры</h2>
+      <p class="muted">Откройте видео и смотрите, пока идёт таймер. Вкладка должна быть активной, видео не на паузе. В конце нажмите цифру. Каждое видео можно смотреть раз в 24 часа.</p>
+      ${views.length ? `<div class="bx-tasks">${views.map((t) => `
+        <a class="bx-task" href="/bux-view?c=${encodeURIComponent(t.id)}">
+          <img src="${esc(t.avatar)}&s=64" alt="">
+          <div><b>${esc(t.title)}</b><small>${esc(t.owner)} · ${t.seconds} с</small></div>
+          <span class="bx-rew">+${R(t.reward)}</span>
+        </a>`).join("")}</div>` : `<p class="muted">Сейчас рекламы нет: всё уже просмотрено. Загляните позже!</p>`}
+    </section>`;
+  el.querySelectorAll("[data-dis]").forEach((b) => (b.onclick = () => { const s = document.getElementById("ds-" + b.dataset.dis); s.hidden = !s.hidden; }));
+  el.querySelectorAll("[data-copy]").forEach((b) => (b.onclick = async () => { await navigator.clipboard.writeText(b.dataset.copy); b.textContent = "✅ Скопировано"; }));
+  el.querySelectorAll("[data-check]").forEach((b) => (b.onclick = async () => {
+    const m = document.getElementById("dm-" + b.dataset.check);
+    b.disabled = true; m.textContent = "Проверяем на GitHub…";
+    const r = await post("/api/bux/dislike/check", { cid: b.dataset.check });
+    b.disabled = false;
+    if (r.ok) { m.innerHTML = `✅ Засчитано! +${R(r.reward)}`; setTimeout(boot, 1500); }
+    else m.textContent = "❌ " + r.error;
+  }));
 }
 
 // ── Реклама ──
 async function ads() {
   const el = document.getElementById("tab");
   el.innerHTML = `<p class="status">Загрузка…</p>`;
-  const d = await api("/api/bux/campaigns");
+  const [d, di] = await Promise.all([api("/api/bux/campaigns"), api("/api/bux/dislike/info")]);
   const pre = qs.get("video") || "";
+  let kind = qs.get("type") === "dislike" ? "dislike" : "view";
   el.innerHTML = `
     <section class="bx-box">
-      <h2>Новая реклама</h2>
-      ${d.myVideos.length ? `
+      <h2>Новый заказ</h2>
+      <div class="tabs" id="otype"><a data-o="view">👀 Просмотры своего видео</a><a data-o="dislike">👎 Дизлайки любому видео</a></div>
+      <div id="oform"></div>
+    </section>
+    <section class="bx-box">
+      <h2>Мои заказы</h2>
+      ${d.campaigns.length ? `<table class="bx-table"><tr><th>Видео</th><th>Что</th><th>Выполнено</th><th>Осталось</th><th>Статус</th><th></th></tr>
+        ${d.campaigns.map((c) => `<tr><td><a href="/watch?v=${encodeURIComponent(c.video)}">${esc(c.video.split("/").pop())}</a></td>
+          <td>${c.type === "dislike" ? `${LV_EMOJI[c.level]} дизлайк ур. ${c.level}` : `👀 ${c.seconds} с`}</td>
+          <td>${c.views} из ${Math.round(c.budget / c.price)}</td><td>${R(c.left)}</td>
+          <td>${{ active: "🟢 идёт", done: "✅ завершён", stopped: "⏹ остановлен" }[c.status]}</td>
+          <td>${c.status === "active" ? `<button class="btn ghost sm" data-stop="${c.id}">Остановить</button>` : ""}</td></tr>`).join("")}</table>`
+        : `<p class="muted">Заказов пока нет.</p>`}
+      <p class="muted">При остановке неизрасходованные деньги возвращаются на пополненный баланс.</p>
+    </section>`;
+  const draw = () => {
+    document.querySelectorAll("#otype a").forEach((a) => a.classList.toggle("on", a.dataset.o === kind));
+    const box = document.getElementById("oform");
+    if (kind === "view") {
+      box.innerHTML = d.myVideos.length ? `
       <form class="form" id="cf">
         <label>Ваше видео <select name="video">${d.myVideos.map((v) => `<option value="${esc(v.id)}" ${v.id === pre ? "selected" : ""}>${esc(v.title)}</option>`).join("")}</select></label>
         <label>Время просмотра <select name="seconds">${CONF.tariffs.map((t) => `<option value="${t.seconds}" data-p="${t.price}">${t.seconds} с — ${R(t.price)} за просмотр</option>`).join("")}</select></label>
         <label>Сколько просмотров <input name="count" type="number" min="10" max="100000" value="100"></label>
-        <p>Итого: <b id="cost"></b> · на рекламном балансе ${R(ME.ad)}</p>
-        <div class="bk-row"><button class="btn" type="submit">Запустить рекламу</button>
-          <button class="btn ghost" type="button" onclick="show('wallet')">Пополнить баланс</button></div>
+        <p>Итого: <b id="cost"></b> · на балансе ${R(ME.ad)}</p>
+        <div class="bk-row"><button class="btn" type="submit">Запустить</button><button class="btn ghost" type="button" onclick="show('wallet')">Пополнить баланс</button></div>
         <p class="muted" id="cmsg"></p>
-      </form>` : `<p class="muted">У вас пока нет видео на AnyTube (рекламировать можно только свои видео из аккаунта <b>${esc(ME.login)}</b>). <a href="/upload">Как загрузить видео</a></p>`}
-    </section>
-    <section class="bx-box">
-      <h2>Мои рекламные кампании</h2>
-      ${d.campaigns.length ? `<table class="bx-table"><tr><th>Видео</th><th>Время</th><th>Просмотров</th><th>Осталось</th><th>Статус</th><th></th></tr>
-        ${d.campaigns.map((c) => `<tr><td><a href="/watch?v=${encodeURIComponent(c.video)}">${esc(c.video.split("/").pop())}</a></td><td>${c.seconds} с</td>
-          <td>${c.views} из ${Math.round(c.budget / c.price)}</td><td>${R(c.left)}</td>
-          <td>${{ active: "🟢 идёт", done: "✅ завершена", stopped: "⏹ остановлена" }[c.status]}</td>
-          <td>${c.status === "active" ? `<button class="btn ghost sm" data-stop="${c.id}">Остановить</button>` : ""}</td></tr>`).join("")}</table>`
-        : `<p class="muted">Кампаний пока нет.</p>`}
-      <p class="muted">При остановке неизрасходованные деньги возвращаются на рекламный баланс.</p>
-    </section>`;
-  const f = document.getElementById("cf");
-  if (f) {
-    const calc = () => { const p = +f.seconds.selectedOptions[0].dataset.p; document.getElementById("cost").textContent = R(p * Math.max(0, Math.floor(+f.count.value || 0))); };
+      </form>` : `<p class="muted">Просмотры можно заказать только для своих видео (аккаунт <b>${esc(ME.login)}</b>). <a href="/upload">Как загрузить видео</a></p>`;
+    } else {
+      box.innerHTML = `
+      <form class="form" id="cf">
+        <label>Ссылка на любое видео AnyTube <input name="video" required placeholder="${location.origin}/watch?v=…" value="${esc(pre ? location.origin + "/watch?v=" + encodeURIComponent(pre) : "")}"></label>
+        <div><b>Уровень дизлайка</b>
+          <div class="lv-pick">${Object.entries(di.levels).map(([l, name]) => `<label class="lv${l}"><input type="radio" name="level" value="${l}" ${l === "1" ? "checked" : ""}><span>${LV_EMOJI[l]} <b>${l}</b> · ${esc(name.replace(/^\S+\s/, ""))}</span></label>`).join("")}</div></div>
+        <label>Сколько дизлайков <input name="count" type="number" min="1" max="10000" value="10"></label>
+        <p>${R(di.price)} за дизлайк · итого: <b id="cost"></b> · на балансе ${R(ME.ad)}</p>
+        <p class="muted">Исполнители ставят дизлайк через программу AnyTube Uploader, сайт проверяет на GitHub, что уровень именно тот. Один человек — один дизлайк на видео.</p>
+        <div class="bk-row"><button class="btn" type="submit">Заказать дизлайки</button><button class="btn ghost" type="button" onclick="show('wallet')">Пополнить баланс</button></div>
+        <p class="muted" id="cmsg"></p>
+      </form>`;
+    }
+    const f = document.getElementById("cf");
+    if (!f) return;
+    const calc = () => {
+      const n = Math.max(0, Math.floor(+f.count.value || 0));
+      document.getElementById("cost").textContent = R((kind === "view" ? +f.seconds.selectedOptions[0].dataset.p : di.price) * n);
+    };
     f.oninput = calc; calc();
     f.onsubmit = async (e) => {
       e.preventDefault();
-      const r = await post("/api/bux/campaigns", { video: f.video.value, seconds: +f.seconds.value, count: +f.count.value });
+      const body = kind === "view" ? { video: f.video.value, seconds: +f.seconds.value, count: +f.count.value }
+        : { type: "dislike", video: f.video.value, level: +f.level.value, count: +f.count.value };
+      const r = await post("/api/bux/campaigns", body);
       if (r.error) return (document.getElementById("cmsg").textContent = "❌ " + r.error);
       boot();
     };
-  }
+  };
+  document.querySelectorAll("#otype a").forEach((a) => (a.onclick = () => { kind = a.dataset.o; draw(); }));
+  draw();
   el.querySelectorAll("[data-stop]").forEach((b) => (b.onclick = async () => { await post("/api/bux/campaigns/stop", { cid: b.dataset.stop }); boot(); }));
 }
 
@@ -133,7 +194,7 @@ async function ads() {
 async function wallet() {
   const el = document.getElementById("tab");
   const h = await api("/api/bux/history");
-  const names = { buy: "🛒 Покупка", sale: "💰 Продажа", watch: "⏱ Почасовой просмотр", view: "👀 Просмотр", campaign: "📢 Реклама", refund: "↩ Возврат", "to-ad": "🔁 На рекламу", topup: "💳 Пополнение", withdraw: "📤 Вывод", paid: "✅ Выплачено", rejected: "↩ Отклонено", admin: "🛠 Администратор" };
+  const names = { dislike: "👎 Дизлайк", buy: "🛒 Покупка", sale: "💰 Продажа", watch: "⏱ Почасовой просмотр", view: "👀 Просмотр", campaign: "📢 Реклама", refund: "↩ Возврат", "to-ad": "🔁 На рекламу", topup: "💳 Пополнение", withdraw: "📤 Вывод", paid: "✅ Выплачено", rejected: "↩ Отклонено", admin: "🛠 Администратор" };
   el.innerHTML = `
     ${qs.get("topup") ? `<div class="bk-ok">✅ Спасибо! Деньги зачислятся на рекламный баланс, как только ЮMoney подтвердит перевод (обычно за минуту).</div>` : ""}
     <div class="bx-grid">

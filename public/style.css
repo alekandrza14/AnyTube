@@ -178,3 +178,18 @@ main{max-width:1400px;margin:0 auto;padding:24px 20px}
 .wall-price{background:#e8161d;color:#fff;font-weight:900;font-size:28px;padding:8px 16px;border-radius:10px;white-space:nowrap}
 .wall-howto{margin-top:10px}.wall-howto summary{cursor:pointer;font-weight:600}
 .wall-howto ol{margin:8px 0 0;padding-left:20px;color:var(--muted)}
+
+/* ── букс: дизлайки ── */
+.lv{display:grid;place-items:center;width:44px;height:44px;border-radius:10px;font-size:18px;line-height:1;color:#fff}
+.lv b{font-size:12px}
+.lv1,.lv-pick .lv1 input:checked+span{background:#8a7a2a}.lv2,.lv-pick .lv2 input:checked+span{background:#a8662a}.lv3,.lv-pick .lv3 input:checked+span{background:#b5482a}
+.lv4,.lv-pick .lv4 input:checked+span{background:#b52a2a}.lv5,.lv-pick .lv5 input:checked+span{background:#7a2ab5}
+.bx-dis{cursor:pointer}
+.dis-steps{background:var(--bg);border:1px dashed var(--line);border-radius:10px;padding:10px 14px;margin:-2px 0 8px}
+.dis-steps ol{margin:0 0 10px;padding-left:20px;line-height:1.9}
+.lv-big{display:inline-block;color:#fff;font-weight:800;padding:3px 10px;border-radius:8px;margin-left:4px}
+.lv-pick{display:grid;gap:6px;margin-top:6px}
+.lv-pick label{display:block;font-weight:400}
+.lv-pick input{display:none}
+.lv-pick span{display:block;padding:8px 12px;border-radius:8px;border:1px solid var(--line);background:var(--bg);cursor:pointer}
+.lv-pick input:checked+span{color:#fff;border-color:transparent;font-weight:700}

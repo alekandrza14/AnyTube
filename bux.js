@@ -20,6 +20,8 @@ const CFG = {
   minWithdraw: Math.round(Number(env("BUX_MIN_WITHDRAW", "10")) * 100),
   minTopup: Math.round(Number(env("BUX_MIN_TOPUP", "10")) * 100),
   minAccountDays: Number(env("BUX_MIN_ACCOUNT_DAYS", "7")),
+  dislikePrice: Math.round(Number(env("BUX_DISLIKE_PRICE", "5")) * 100), // цена одного дизлайка для заказчика, коп.
+  ghToken: env("GITHUB_TOKEN").replace(/^Bearer\s+/i, ""),
   paidToken: env("PAID_TOKEN"),      // classic-токен аккаунта сайта с правом repo: читает приватные anytubepaid_*
   saleCommission: Math.min(0.9, Math.max(0, Number(env("SALE_COMMISSION", "0.37")))),
   sbpPhone: env("SBP_PHONE"), sbpBank: env("SBP_BANK"), sbpName: env("SBP_NAME"),
@@ -29,12 +31,19 @@ if (!env("SESSION_SECRET")) console.warn("[bux] SESSION_SECRET не задан �
 // Тарифы: секунды просмотра → цена одного просмотра для рекламодателя (коп.)
 export const TARIFFS = { 15: 10, 30: 18, 45: 25, 60: 30, 90: 40, 120: 50 };
 const reward = (price) => Math.floor(price * (1 - CFG.commission));
+export const DISLIKE_LEVELS = { 1: "😕 Ну не очень", 2: "😒 Так себе", 3: "👎 Плохо", 4: "😖 Очень плохо, зря потратил время", 5: "🤮 Это убогий видос, мой день испорчен" };
+// имя репозитория-дизлайка — точно как его создаёт AnyTube Uploader
+export function dislikeRepoName(author, file, level) {
+  const head = `anytubecomment_${author}_`, tail = "_Commet.";
+  const part = String(file).replace(/[^A-Za-z0-9._-]/g, "-").slice(0, 100 - head.length - tail.length - "5.diske".length);
+  return `${head}${part}${tail}${level}.diske`;
+}
 const DAY = 24 * 3600 * 1000;
 const rub = (k) => (k / 100).toFixed(2);
 
 // ─────────────── хранилище ───────────────
 const EMPTY = () => ({ v: 1, seq: 1, users: {}, campaigns: {}, views: {}, ipViews: {}, withdrawals: {}, topups: {}, ops: [],
-  purchases: {}, timepass: {}, sbp: {} });
+  purchases: {}, timepass: {}, sbp: {}, dislikeDone: {} });
 let db = EMPTY();
 let dbSha = null, dirty = false, saving = null, loaded = false;
 const LOCAL = path.join(process.cwd(), "data", "db.json");
@@ -211,11 +220,15 @@ export function mountBux(app, getVideos) {
     const { videos } = await getVideos();
     const byId = new Map(videos.map((v) => [v.id, v]));
     const now = Date.now();
+    const me = u.login.toLowerCase();
     const list = Object.values(db.campaigns)
-      .filter((c) => c.status === "active" && c.left >= c.price && c.uid !== u.uid && byId.has(c.video)
-        && !(now - (db.views[`${u.uid}:${c.id}`] || 0) < DAY))
-      .sort((a, b) => b.price - a.price)
-      .map((c) => { const v = byId.get(c.video); return { id: c.id, seconds: c.seconds, reward: c.reward, title: v.title, owner: v.owner, avatar: v.avatar }; });
+      .filter((c) => c.status === "active" && c.left >= c.price && c.uid !== u.uid && byId.has(c.video))
+      .filter((c) => c.type === "dislike"
+        ? byId.get(c.video).owner.toLowerCase() !== me && !db.dislikeDone[`${u.uid}:${c.video}`]   // себе дизлайк не засчитывается; одно видео — один раз
+        : !(now - (db.views[`${u.uid}:${c.id}`] || 0) < DAY))
+      .sort((a, b) => b.reward - a.reward)
+      .map((c) => { const v = byId.get(c.video); return { id: c.id, type: c.type || "view", seconds: c.seconds, level: c.level, levelLabel: DISLIKE_LEVELS[c.level],
+        reward: c.reward, title: v.title, owner: v.owner, avatar: v.avatar, video: v.id }; });
     res.json({ tasks: list, canEarn: canEarn(u) });
   });
 
@@ -224,7 +237,7 @@ export function mountBux(app, getVideos) {
     if (!canEarn(u)) return res.status(403).json({ error: `Зарабатывать можно с GitHub-аккаунта старше ${CFG.minAccountDays} дней` });
     const { cid } = await readBody(req);
     const c = db.campaigns[cid];
-    if (!c || c.status !== "active" || c.left < c.price) return res.status(404).json({ error: "Эта реклама уже закончилась" });
+    if (!c || c.status !== "active" || c.left < c.price || c.type === "dislike") return res.status(404).json({ error: "Эта реклама уже закончилась" });
     if (c.uid === u.uid) return res.status(400).json({ error: "Свою рекламу смотреть за деньги нельзя" });
     if (Date.now() - (db.views[`${u.uid}:${cid}`] || 0) < DAY) return res.status(429).json({ error: "Это видео вы уже смотрели сегодня" });
     for (const [t, s] of sessions) if (s.uid === u.uid || Date.now() - s.start > 30 * 60 * 1000) sessions.delete(t); // одно окно за раз
@@ -273,6 +286,7 @@ export function mountBux(app, getVideos) {
   app.post("/api/bux/campaigns", async (req, res) => {
     const u = auth(req, res); if (!u) return;
     const b = await readBody(req);
+    if (b.type === "dislike") return createDislikeCampaign(u, b, res);
     const seconds = Number(b.seconds), count = Math.floor(Number(b.count));
     const price = TARIFFS[seconds];
     if (!price) return res.status(400).json({ error: "Неверное время просмотра" });
@@ -634,4 +648,70 @@ export function mountBux(app, getVideos) {
     if (!admin(req, res)) return;
     res.json({ requests: Object.values(db.sbp).sort((a, b) => (b.status === "sent") - (a.status === "sent") || b.created - a.created).slice(0, 300) });
   });
+
+  // ═══════════════ ДИЗЛАЙКИ ЗА ДЕНЬГИ (любое видео, любой из 5 уровней) ═══════════════
+  const videoIdFrom = (x) => {
+    let s = String(x || "").trim();
+    try { if (/^https?:/i.test(s)) s = new URL(s).searchParams.get("v") || s; } catch {}
+    return decodeURIComponent(s).replace(/^\/+|\/+$/g, "");
+  };
+  async function createDislikeCampaign(u, b, res) {
+    const level = Number(b.level), count = Math.floor(Number(b.count));
+    if (!DISLIKE_LEVELS[level]) return res.status(400).json({ error: "Выберите уровень дизлайка от 1 до 5" });
+    if (!(count >= 1 && count <= 10000)) return res.status(400).json({ error: "Дизлайков: от 1 до 10 000" });
+    const { videos } = await getVideos();
+    const v = videos.find((x) => x.id === videoIdFrom(b.video));
+    if (!v) return res.status(404).json({ error: "Видео не найдено на AnyTube — вставьте ссылку со страницы видео" });
+    const price = CFG.dislikePrice, cost = price * count;
+    if (u.ad < cost) return res.status(402).json({ error: `Не хватает ${rub(cost - u.ad)} ₽ на пополненном балансе` });
+    u.ad -= cost;
+    const c = { id: id("d"), type: "dislike", uid: u.uid, video: v.id, level, price, reward: reward(price), budget: cost, left: cost, views: 0, status: "active", created: Date.now() };
+    db.campaigns[c.id] = c;
+    op(u.uid, "campaign", -cost, `дизлайки ${c.id}: ${count} × уровень ${level}`);
+    await save(true);
+    res.json({ ok: true, campaign: c, ad: u.ad });
+  }
+  const ghRepo = async (owner, name) => {
+    const r = await fetch(`https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`, {
+      headers: { "User-Agent": "anytube-bux", Accept: "application/vnd.github+json", ...(CFG.ghToken ? { Authorization: `Bearer ${CFG.ghToken}` } : {}) } }).catch(() => null);
+    if (!r) return { error: true };
+    if (r.status === 404) return null;
+    if (!r.ok) return { error: true };
+    return r.json();
+  };
+  const lastCheck = new Map();
+  app.post("/api/bux/dislike/check", async (req, res) => {
+    const u = auth(req, res); if (!u) return;
+    if (!canEarn(u)) return res.status(403).json({ error: `Зарабатывать можно с GitHub-аккаунта старше ${CFG.minAccountDays} дней` });
+    if (Date.now() - (lastCheck.get(u.uid) || 0) < 8000) return res.status(429).json({ error: "Подождите несколько секунд и проверьте снова" });
+    lastCheck.set(u.uid, Date.now());
+    const c = db.campaigns[(await readBody(req)).cid];
+    if (!c || c.type !== "dislike" || c.status !== "active" || c.left < c.price) return res.status(404).json({ error: "Это задание уже закончилось" });
+    if (c.uid === u.uid) return res.status(400).json({ error: "Своё задание выполнять нельзя" });
+    if (db.dislikeDone[`${u.uid}:${c.video}`]) return res.status(400).json({ error: "За дизлайк этому видео вы уже получили оплату" });
+    const v = (await getVideos()).videos.find((x) => x.id === c.video);
+    if (!v) return res.status(404).json({ error: "Видео недоступно" });
+    if (v.owner.toLowerCase() === u.login.toLowerCase()) return res.status(400).json({ error: "Своему видео дизлайк не засчитывается" });
+    const file = v.id.split("/").pop();
+    const want = await ghRepo(u.login, dislikeRepoName(v.owner, file, c.level));
+    if (want?.error) return res.status(502).json({ error: "GitHub сейчас не ответил — попробуйте через минуту" });
+    if (!want || want.private || String(want.owner?.login).toLowerCase() !== u.login.toLowerCase()) {
+      for (let l = 1; l <= 5; l++) {            // подсказка, если перепутан уровень
+        if (l === c.level) continue;
+        const other = await ghRepo(u.login, dislikeRepoName(v.owner, file, l));
+        if (other && !other.error && !other.private)
+          return res.status(400).json({ error: `Вы поставили уровень ${l} «${DISLIKE_LEVELS[l]}», а нужен уровень ${c.level} «${DISLIKE_LEVELS[c.level]}». Откройте AnyTube Uploader → «Дизлайк», выберите уровень ${c.level} и нажмите снова — уровень поменяется.` });
+      }
+      return res.status(400).json({ error: `Дизлайк не найден. Поставьте его через AnyTube Uploader (вкладка «Дизлайк», уровень ${c.level}) и подождите ~10 секунд.` });
+    }
+    c.left -= c.price; c.views++;
+    if (c.left < c.price) c.status = "done";
+    u.earn += c.reward; u.earned = (u.earned || 0) + c.reward;
+    u.dislikes = (u.dislikes || 0) + 1;
+    db.dislikeDone[`${u.uid}:${c.video}`] = { t: Date.now(), cid: c.id, repo: want.full_name };
+    op(u.uid, "dislike", c.reward, `дизлайк ур. ${c.level}: ${v.title}`);
+    await save(true);
+    res.json({ ok: true, reward: c.reward, earn: u.earn });
+  });
+  app.get("/api/bux/dislike/info", (req, res) => res.json({ price: CFG.dislikePrice, reward: reward(CFG.dislikePrice), levels: DISLIKE_LEVELS }));
 }

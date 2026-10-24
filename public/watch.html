@@ -49,6 +49,7 @@ api("/api/video?id=" + encodeURIComponent(id)).then((v) => {
     <p style="color:var(--muted)">Файл: ${esc(v.path)}${multi ? ` · ${parts.length} частей` : ""} · обновлено ${ago(v.updated)}</p>
     <section class="shop" id="shop"></section>
     <div class="promo"><a class="btn promo-btn" href="/bux?tab=ads&video=${encodeURIComponent(v.id)}">📢 Продвинуть в буксе</a>
+      <a class="btn ghost" href="/bux?tab=ads&type=dislike&video=${encodeURIComponent(v.id)}">👎 Заказать дизлайки</a>
       <span class="muted">Автор может запустить рекламу видео, зрители смотрят и зарабатывают. <a href="/bux">Заработать на просмотрах →</a></span></div>
     <section class="dislikes">
       <div class="dl-head"><b>👎 Дизлайки: ${v.dislikes.total}</b>
