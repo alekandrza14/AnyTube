@@ -40,7 +40,7 @@ api("/api/video?id=" + encodeURIComponent(id)).then((v) => {
     <h1>${esc(v.title)}</h1>
     <div class="row">
       <a class="author" href="/?author=${encodeURIComponent(v.owner)}"><img src="${esc(v.avatar)}&s=80" alt="">
-        <div><b>${esc(v.owner)}</b><br><span style="color:var(--muted)">${esc(v.repo)}</span></div></a>
+        <div><b>${esc(v.owner)}</b> ${v.authorShare ? shareChip(v.authorShare.pct, v.authorShare.tier, v.authorShare.diff) : ""}<br><span style="color:var(--muted)">${esc(v.repo)}${v.authorShare && v.authorShare.tier !== "Автор" ? " · " + esc(v.authorShare.tier) : ""}</span></div></a>
       <div style="display:flex;gap:8px">
         <a class="btn" id="dl" href="${esc(parts[0].src)}?download=1">⬇ Скачать${v.trailer ? " трейлер" : v.kind === "game" || v.kind === "model" ? " ролик" : v.kind === "wallpaper" && v.sale ? " превью" : multi ? " часть 1" : ""}</a>
         <span class="like-wrap"><button class="btn like-btn" id="likeBtn"><b class="plus">+</b> <span id="likeN">${v.likes || 0}</span></button><small class="like-ip" id="likeIp"></small></span>
@@ -102,7 +102,7 @@ api("/api/video?id=" + encodeURIComponent(id)).then((v) => {
     if (v.pending) el.insertAdjacentHTML("afterbegin", `<div class="note">⏳ Видео на проверке у модератора. Пока его видите только вы и администратор — в ленте оно появится после одобрения.</div>`);
     else if (v.rejected) el.insertAdjacentHTML("afterbegin", `<div class="note">❌ Видео не прошло модерацию: ${esc(v.rejected.reason || "")}. Вопросы — на <a href="/report">странице жалоб</a>.</div>`);
     else if (v.hidden) el.insertAdjacentHTML("afterbegin", `<div class="note">🙈 Это видео скрыто администратором и не показывается в ленте.</div>`);
-    if (!m.user || !m.user.admin) return;
+    if (!m.user || !(m.user.admin || (m.user.mod && m.user.mod.content))) return; // администратор и модераторы
     const row = el.querySelector(".row > div");
     row.insertAdjacentHTML("beforeend", `<a class="btn ghost" href="/moderation">🛡 Модерация</a>`);
     if (v.pending || v.rejected) {
@@ -112,6 +112,7 @@ api("/api/video?id=" + encodeURIComponent(id)).then((v) => {
         location.reload();
       };
     }
+    if (!m.user.admin) return;
     row.insertAdjacentHTML("beforeend", `<button class="btn ghost" id="hideBtn">${v.hidden ? "👁 Вернуть видео" : "🙈 Скрыть видео"}</button>`);
     document.getElementById("hideBtn").onclick = async () => {
       if (!v.hidden && !confirm("Скрыть это видео из ленты, поиска и букса?")) return;

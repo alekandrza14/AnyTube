@@ -102,6 +102,7 @@ async function shopInit(v) {
     const glb = modelFile();
     if (glb) html += `<div class="shop-row"><button class="btn ghost" data-3d>🧊 ${viewer ? "Скрыть 3D" : "Посмотреть модель в 3D"}</button></div>`;
     if (isGame) html += `<p class="muted">🎮 Игра запускается прямо в браузере (WebGL). Работает в изолированном окне: у игры нет доступа к вашему аккаунту и балансу.${v.sale?.per_hour && !a.owned ? " Деньги списываются поминутно, только пока игра открыта на этой странице." : ""}</p>`;
+    if (v.sale && a.author) html += `<p class="muted author-share">💚 ${a.author.pct}% от каждой покупки${v.sale.per_hour ? " и каждой оплаченной минуты" : ""} получает автор${a.author.tier !== "Автор" ? ` (${esc(a.author.tier)})` : ""}.</p>`;
     html += `<p class="muted" id="shopMsg"></p>`;
     box.innerHTML = html;
     box.querySelectorAll("[data-buy]").forEach((b) => (b.onclick = () => buy(b.dataset.buy)));

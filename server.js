@@ -2,7 +2,7 @@ import express from "express";
 import { Readable } from "node:stream";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { mountBux, isHidden, likesOf, isBanned, isCommentHidden, syncApprovals, canSeeHidden, moderationState } from "./bux.js";
+import { mountBux, isHidden, likesOf, isBanned, isCommentHidden, syncApprovals, canSeeHidden, moderationState, authorShare } from "./bux.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -306,7 +306,7 @@ app.get("/api/videos", async (req, res) => {
   if (q) list = list.filter((v) => `${v.title} ${v.repoTitle} ${v.owner} ${v.path}`.toLowerCase().includes(q));
   list = [...list].sort(sort === "new" ? byNew : byStars)
     .map(({ comments, parts, _desc, _paid, _game, dislikes, ...v }) => ({ ...v, likes: likesOf(v.id), partCount: parts ? parts.length : 1,
-      commentCount: (comments || []).filter((c) => !isCommentHidden(c.id) && !isBanned(c.by)).length, dislikeCount: dislikes ? dislikes.total : 0, dislikeAvg: dislikes ? dislikes.avg : 0 })); // в ленте только числа
+      share: authorShare(v.owner).pct, commentCount: (comments || []).filter((c) => !isCommentHidden(c.id) && !isBanned(c.by)).length, dislikeCount: dislikes ? dislikes.total : 0, dislikeAvg: dislikes ? dislikes.avg : 0 })); // в ленте только числа
   res.json({ updated: at, error: error || (tokenBad ? "GITHUB_TOKEN неверный, сайт работает без него (лимит 60 запросов/час)" : null), sort, count: list.length, videos: list });
 });
 
@@ -321,6 +321,7 @@ app.get("/api/video", async (req, res) => {
   Object.assign(pub, mod);
   pub.hidden = isHidden(v);
   pub.likes = likesOf(v.id);
+  { const a = authorShare(v.owner); pub.authorShare = { pct: a.pct, base: a.base, diff: a.diff, tier: a.tier }; }
   pub.comments = (v.comments || []).filter((c) => !isCommentHidden(c.id) && !isBanned(c.by)); // скрытые модератором не показываем
   res.json({ ...pub, dislikeLabels: DISLIKE_LABELS });
 });

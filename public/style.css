@@ -222,10 +222,15 @@ main{max-width:1400px;margin:0 auto;padding:24px 20px}
 .like-wrap{display:inline-grid;justify-items:center;gap:2px}
 .like-ip{font-size:11px;color:var(--muted);white-space:nowrap}
 /* WebGL-игры и 3D-модели */
-.game-stage{margin-bottom:12px}
+.game-stage{margin-bottom:12px;scroll-margin-top:76px}
 .game-stage iframe{width:100%;aspect-ratio:16/9;max-height:80vh;border:0;border-radius:12px;background:#000;display:block}
 .game-stage iframe:fullscreen{max-height:none;border-radius:0}
 .game-bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:8px}
-.model-stage{margin-bottom:12px}
+.model-stage{margin-bottom:12px;scroll-margin-top:76px}
 .model-stage model-viewer{display:block;height:min(70vh,520px);border-radius:12px;overflow:hidden}
 .shop .btn.big small{display:block;font-weight:400;opacity:.85;font-size:12px}
+/* доля автора рядом с аватаркой */
+.share-chip{display:inline-block;margin-left:6px;padding:1px 7px;border-radius:9px;font-size:12px;font-weight:700;line-height:1.5;background:#2a2a33;color:#c9c9d4;vertical-align:1px}
+.share-chip.plus{background:#2c2a1a;color:#ffd27a}
+.share-chip.vip{background:#16321f;color:#5fd38a}
+.share-chip.legend{background:linear-gradient(135deg,#ff3b5c,#ffb347);color:#fff}

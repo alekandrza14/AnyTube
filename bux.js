@@ -48,7 +48,7 @@ const rub = (k) => (k / 100).toFixed(2);
 // ─────────────── хранилище ───────────────
 const EMPTY = () => ({ v: 1, seq: 1, users: {}, campaigns: {}, views: {}, ipViews: {}, withdrawals: {}, topups: {}, ops: [],
   purchases: {}, timepass: {}, timefrac: {}, sbp: {}, dislikeDone: {}, hidden: {}, likes: {}, likeIp: {}, likeDone: {},
-  reports: {}, hiddenComments: {}, bannedAuthors: {}, approved: {}, rejected: {}, trusted: {}, premodInit: false });
+  reports: {}, hiddenComments: {}, bannedAuthors: {}, approved: {}, rejected: {}, trusted: {}, premodInit: false, mods: {}, shares: {} });
 let db = EMPTY();
 let dbSha = null, dirty = false, saving = null, loaded = false;
 const LOCAL = path.join(process.cwd(), "data", "db.json");
@@ -184,7 +184,37 @@ export function syncApprovals(videos) {
 export function canSeeHidden(req, v) {
   if (!loaded) return false;
   const u = sessionUser(req);
-  return !!u && (u.login.toLowerCase() === CFG.admin || u.login.toLowerCase() === v.owner.toLowerCase());
+  return !!u && (!!modRights(u.login)?.content || u.login.toLowerCase() === v.owner.toLowerCase());
+}
+// ── доля автора с продаж и поминутной оплаты ──
+// обычные авторы: 1 − SALE_COMMISSION (63%); проверенные и модераторы: 90%; особые ставки назначают админ и модераторы с правом «доли»
+export const SHARE_VERIFIED = 90, SHARE_MOD_MAX = 90, SHARE_ADMIN_MAX = 150;
+const baseShare = () => Math.round((1 - CFG.saleCommission) * 100);
+export function modRights(login) {
+  const l = String(login || "").toLowerCase();
+  if (l && l === CFG.admin) return { admin: true, content: true, shares: true };
+  const m = db.mods && db.mods[l];
+  return m ? { admin: false, content: !!m.content, shares: !!m.shares } : null;
+}
+export function shareTier(pct, source) {
+  if (source === "owner") return "👑 Владелец";
+  if (pct > 100) return "👑 Легенда";
+  if (source === "mod") return "🛡 Модератор";
+  if (pct >= SHARE_VERIFIED) return "✅ Проверенный";
+  if (pct > baseShare()) return "⭐ Партнёр";
+  if (pct < baseShare()) return "📉 Сниженная ставка";
+  return "Автор";
+}
+export function authorShare(login) {
+  const l = String(login || "").toLowerCase(), base = baseShare();
+  const x = db.shares && db.shares[l];
+  let pct, source;
+  if (x) { pct = x.pct; source = "set"; }
+  else if (l === CFG.admin) { pct = 100; source = "owner"; }
+  else if (db.mods && db.mods[l]) { pct = Math.max(base, SHARE_VERIFIED); source = "mod"; }
+  else if (db.trusted && db.trusted[l]) { pct = Math.max(base, SHARE_VERIFIED); source = "verified"; }
+  else { pct = base; source = "base"; }
+  return { pct, base, diff: pct - base, source, tier: shareTier(pct, source), reason: x ? x.reason : "", by: x ? x.by : "" };
 }
 // модерация: заблокированные авторы и скрытые комментарии
 export function isBanned(login) { return !!(login && db.bannedAuthors && db.bannedAuthors[String(login).toLowerCase()]); }
@@ -228,7 +258,7 @@ export function mountBux(app, getVideos) {
     return u;
   };
   const pub = (u) => u && ({ uid: u.uid, login: u.login, avatar: u.avatar, ad: u.ad, earn: u.earn, held: u.held || 0,
-    views: u.views || 0, earned: u.earned || 0, admin: u.login.toLowerCase() === CFG.admin, canEarn: canEarn(u) });
+    views: u.views || 0, earned: u.earned || 0, admin: u.login.toLowerCase() === CFG.admin, mod: modRights(u.login), canEarn: canEarn(u) });
   const canEarn = (u) => !u.ghCreated || Date.now() - new Date(u.ghCreated) > CFG.minAccountDays * DAY;
 
   // вход
@@ -533,7 +563,7 @@ export function mountBux(app, getVideos) {
   }
   function payout(v, amount, note) {
     const s = seller(v);
-    const net = Math.floor(amount * (1 - CFG.saleCommission));
+    const net = Math.floor(amount * authorShare(v.owner).pct / 100); // > 100% — платформа доплачивает из своих
     s.earn += net; s.earned = (s.earned || 0) + net;
     op(s.uid, "sale", net, note);
   }
@@ -551,7 +581,7 @@ export function mountBux(app, getVideos) {
     const v = await findVideo(String(req.query.id || ""));
     if (!v) return res.status(404).json({ error: "Не найдено" });
     const u = loaded ? sessionUser(req) : null;
-    res.json({ ...access(u, v), loggedIn: !!u, funds: u ? funds(u) : 0, sale: v.sale, commission: CFG.saleCommission,
+    res.json({ ...access(u, v), loggedIn: !!u, funds: u ? funds(u) : 0, sale: v.sale, commission: CFG.saleCommission, author: authorShare(v.owner),
       paidReady: !!CFG.paidToken });
   });
 
@@ -598,7 +628,7 @@ export function mountBux(app, getVideos) {
     fr[v.id] = Math.max(0, owe - cost);
     tp[v.id] = Math.max(tp[v.id] || 0, now) + 60e3;
     if (cost) opMerge(u.uid, "watch", -cost, game ? `игра «${v.title}»` : `просмотр «${v.title}»`);
-    const s = seller(v), net = cost * (1 - CFG.saleCommission);
+    const s = seller(v), net = cost * authorShare(v.owner).pct / 100;
     s.earnFrac = (s.earnFrac || 0) + net; const whole = Math.floor(s.earnFrac); s.earnFrac -= whole;
     s.earn += whole; s.earned = (s.earned || 0) + whole;
     if (whole) opMerge(s.uid, "sale", whole, game ? `игра по времени «${v.title}»` : `просмотры «${v.title}»`);
@@ -1126,8 +1156,15 @@ key:function(i){return Object.keys(d)[i]||null},get length(){return Object.keys(
     await save(true);
     res.json({ ok: true, id: rep.id });
   });
+  // модератор с правом: content — жалобы, скрытие, баны, проверка видео; shares — доли авторов и «проверенные»
+  const modGuard = (req, res, right) => {
+    const u = auth(req, res); if (!u) return null;
+    const r = modRights(u.login);
+    if (!r || !r[right]) { res.status(403).json({ error: right === "shares" ? "Нужно право модератора «доли авторов»" : "Только для администрации" }); return null; }
+    return u;
+  };
   app.get("/api/mod/reports", async (req, res) => {
-    if (!admin(req, res)) return;
+    if (!modGuard(req, res, "content")) return;
     const { videos } = await getVideos();
     const vids = new Map(videos.map((v) => [v.id, v]));
     const comments = new Map(videos.flatMap((v) => (v.comments || []).map((c) => [c.id, { ...c, video: v.id }])));
@@ -1139,16 +1176,21 @@ key:function(i){return Object.keys(d)[i]||null},get length(){return Object.keys(
       hiddenComments: Object.entries(db.hiddenComments || {}).map(([cid, h]) => ({ id: cid, ...h })), reasons: REASONS });
   });
   app.get("/api/mod/comments", async (req, res) => {
-    if (!admin(req, res)) return;
+    if (!modGuard(req, res, "content")) return;
     const { videos } = await getVideos();
     const all = videos.flatMap((v) => (v.comments || []).map((c) => ({ ...c, video: v.id, videoTitle: v.title, hidden: isCommentHidden(c.id), banned: isBanned(c.by) })))
       .sort((a, b) => new Date(b.created) - new Date(a.created)).slice(0, 500);
     res.json({ comments: all });
   });
   app.post("/api/mod/action", async (req, res) => {
-    const me = admin(req, res); if (!me) return;
+    const me = modGuard(req, res, "content"); if (!me) return;
     const { action, target, reportId, note } = await readBody(req);
     const t = String(target || "").trim();
+    const myRights = modRights(me.login);
+    if ((action === "trust" || action === "untrust") && !myRights.shares)
+      return res.status(403).json({ error: "«Проверенный автор» даёт ставку 90% — нужно право «доли авторов»" });
+    if ((action === "ban" || action === "unban") && !myRights.admin && db.mods[t.toLowerCase()])
+      return res.status(403).json({ error: "Модератора может заблокировать только администратор" });
     const stamp = { t: Date.now(), by: me.login, note: String(note || "").slice(0, 300) };
     switch (action) {
       case "hideVideo": db.hidden[t] = { ...stamp, reason: stamp.note || "модерация" }; break;
@@ -1182,7 +1224,7 @@ key:function(i){return Object.keys(d)[i]||null},get length(){return Object.keys(
 
   // ═══════════════ ПРЕМОДЕРАЦИЯ: очередь новых видео ═══════════════
   app.get("/api/mod/pending", async (req, res) => {
-    if (!admin(req, res)) return;
+    if (!modGuard(req, res, "content")) return;
     const { videos } = await getVideos();
     const pick = (v) => ({ id: v.id, title: v.title, owner: v.owner, avatar: v.avatar, src: v.src, kind: v.kind, sale: v.sale,
       duration: v.duration, created: v.created || v.updated, repoUrl: v.repoUrl, descChunks: v.descChunks });
@@ -1192,5 +1234,65 @@ key:function(i){return Object.keys(d)[i]||null},get length(){return Object.keys(
       rejected: videos.filter((v) => isRejected(v)).map((v) => ({ ...pick(v), ...db.rejected[v.id] })),
       trusted: Object.entries(db.trusted || {}).map(([login, x]) => ({ login, ...x })),
     });
+  });
+
+  // ═══════════════ ДОЛИ АВТОРОВ И МОДЕРАТОРЫ ═══════════════
+  app.get("/api/mod/shares", async (req, res) => {
+    const u = auth(req, res); if (!u) return;
+    const r = modRights(u.login);
+    if (!r) return res.status(403).json({ error: "Только для администрации" });
+    const { videos } = await getVideos();
+    const logins = new Set([...videos.map((v) => v.owner.toLowerCase()), ...Object.keys(db.shares || {}), ...Object.keys(db.trusted || {}), ...Object.keys(db.mods || {})]);
+    const stats = {};
+    for (const v of videos) { const l = v.owner.toLowerCase(); (stats[l] ||= { items: 0, paid: 0, avatar: v.avatar, login: v.owner }); stats[l].items++; if (v.sale) stats[l].paid++; }
+    const authors = [...logins].map((l) => ({ login: stats[l]?.login || l, avatar: stats[l]?.avatar || "", items: stats[l]?.items || 0, paid: stats[l]?.paid || 0,
+      ...authorShare(l), setAt: db.shares?.[l]?.t || 0, mod: db.mods?.[l] || null, trusted: !!db.trusted?.[l] }))
+      .sort((a, b) => b.pct - a.pct || b.paid - a.paid || a.login.localeCompare(b.login));
+    res.json({ me: r, base: Math.round((1 - CFG.saleCommission) * 100), verified: SHARE_VERIFIED, modMax: SHARE_MOD_MAX, adminMax: SHARE_ADMIN_MAX,
+      authors, mods: Object.entries(db.mods || {}).map(([login, m]) => ({ login, ...m })),
+      log: (db.shareLog || []).slice(-50).reverse() });
+  });
+  app.post("/api/mod/share", async (req, res) => {
+    const me = modGuard(req, res, "shares"); if (!me) return;
+    const r = modRights(me.login);
+    const { login, pct, reason } = await readBody(req);
+    const l = String(login || "").trim().toLowerCase();
+    if (!/^[a-z0-9-]{1,39}$/.test(l)) return res.status(400).json({ error: "Неверный ник GitHub" });
+    if (l === CFG.admin) return res.status(400).json({ error: "Ставка владельца не меняется" });
+    if (!r.admin && l === me.login.toLowerCase()) return res.status(403).json({ error: "Себе ставку назначать нельзя" });
+    if (!r.admin && db.mods[l]) return res.status(403).json({ error: "Ставку модератора меняет только администратор" });
+    const cur = authorShare(l);
+    if (!r.admin && cur.source === "set" && cur.pct > SHARE_MOD_MAX) return res.status(403).json({ error: "Эту ставку назначил администратор — менять её может только он" });
+    const why = String(reason || "").trim();
+    if (why.length < 10) return res.status(400).json({ error: "Напишите обоснование (хотя бы 10 символов): почему этому автору такая ставка" });
+    const stamp = { t: Date.now(), by: me.login, reason: why.slice(0, 500) };
+    if (pct === null || pct === "" || pct === "auto") {
+      delete db.shares[l];
+      (db.shareLog ||= []).push({ ...stamp, login: l, from: cur.pct, to: authorShare(l).pct, auto: true });
+    } else {
+      const p = Math.round(Number(pct));
+      const max = r.admin ? SHARE_ADMIN_MAX : SHARE_MOD_MAX;
+      if (!Number.isFinite(p) || p < 0 || p > max) return res.status(400).json({ error: `Доля автора — от 0 до ${max}%` + (r.admin ? "" : " (больше 90% назначает только администратор)") });
+      db.shares[l] = { pct: p, ...stamp };
+      (db.shareLog ||= []).push({ ...stamp, login: l, from: cur.pct, to: p });
+    }
+    if (db.shareLog.length > 500) db.shareLog = db.shareLog.slice(-500);
+    await save(true);
+    res.json({ ok: true, share: authorShare(l) });
+  });
+  app.post("/api/mod/mods", async (req, res) => {
+    const me = admin(req, res); if (!me) return;
+    const { login, content, shares, remove } = await readBody(req);
+    const l = String(login || "").trim().toLowerCase();
+    if (!/^[a-z0-9-]{1,39}$/.test(l) || l === CFG.admin) return res.status(400).json({ error: "Неверный ник GitHub" });
+    if (remove) delete db.mods[l];
+    else db.mods[l] = { content: !!content, shares: !!shares, t: Date.now(), by: me.login };
+    await save(true);
+    res.json({ ok: true });
+  });
+  // процент автора для показа рядом с аватаркой (публично)
+  app.get("/api/share", (req, res) => {
+    const a = authorShare(String(req.query.login || ""));
+    res.json({ pct: a.pct, base: a.base, diff: a.diff, tier: a.tier, source: a.source });
   });
 }

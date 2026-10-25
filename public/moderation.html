@@ -14,7 +14,7 @@
 </header>
 <main class="bux">
   <h1>🛡 Модерация</h1>
-  <div class="tabs" id="mtabs"><a data-t="pending">⏳ На проверке <span id="pendN"></span></a><a data-t="reports">⚠ Жалобы</a><a data-t="comments">💬 Комментарии</a><a data-t="banned">⛔ Блокировки</a></div>
+  <div class="tabs" id="mtabs"><a data-t="pending">⏳ На проверке <span id="pendN"></span></a><a data-t="reports">⚠ Жалобы</a><a data-t="comments">💬 Комментарии</a><a data-t="banned">⛔ Блокировки</a><a data-t="shares">💰 Доли авторов</a><a data-t="mods" id="modsTab" hidden>🛡 Модераторы</a></div>
   <div id="root" class="status">Загрузка…</div>
 </main>
 <script src="/app.js"></script>
@@ -43,6 +43,8 @@ async function show(t) {
   root.className = "status"; root.textContent = "Загрузка…";
   if (t === "comments") return comments();
   if (t === "pending") return pending();
+  if (t === "shares") return shares();
+  if (t === "mods") return mods();
   const d = await api("/api/mod/reports");
   if (d.error) { root.innerHTML = `<div class="empty">${esc(d.error)}<br><br><a class="btn" href="/auth/login?back=/moderation">Войти через GitHub</a></div>`; return; }
   root.className = "";
@@ -128,7 +130,83 @@ function banned(d) {
   const bf = document.getElementById("bf");
   bf.onsubmit = (e) => { e.preventDefault(); if (confirm(`Заблокировать ${bf.login.value}?`)) act("ban", bf.login.value.trim(), "", bf.note.value); };
 }
+// ── доли авторов: сколько процентов от денег покупателя получает автор ──
+async function shares(prefill) {
+  const d = await api("/api/mod/shares");
+  if (d.error) { root.innerHTML = `<div class="empty">${esc(d.error)}<br><br><a class="btn" href="/auth/login?back=/moderation?tab=shares">Войти через GitHub</a></div>`; return; }
+  root.className = "";
+  document.getElementById("modsTab").hidden = !d.me.admin;
+  const max = d.me.admin ? d.adminMax : d.modMax;
+  const presets = [[d.base, "обычная"], [d.base + 15, "партнёр"], [88, ""], [d.verified, "проверенный"], [d.base + 50, "легенда, минус для платформы"]]
+    .filter(([p], i, a) => p <= max && a.findIndex(([q]) => q === p) === i);
+  const sign = (n) => (n > 0 ? "+" : "") + n;
+  const src = (a) => a.source === "set" ? `назначил ${esc(a.by)}: «${esc(a.reason)}»` : { base: "обычная ставка", verified: "проверенный автор (автоматически 90%)", mod: "модератор (автоматически 90%)", owner: "владелец сайта" }[a.source];
+  root.innerHTML = `
+    <section class="bx-box">
+      <h2>Назначить долю автора</h2>
+      <p class="muted">Доля — сколько процентов от денег покупателя получает автор (продажи, подписки, поминутные просмотры и игры).
+        Обычная ставка — <b>${d.base}%</b> (комиссия AnyTube ${100 - d.base}%). Проверенные авторы и модераторы автоматически получают <b>${d.verified}%</b>.
+        ${d.me.admin ? `<br>⚠ Больше 100% — <b>отрицательная комиссия</b>: AnyTube доплачивает автору из своих денег. Только для самых крутых.` : `<br>Вы можете назначать до ${d.modMax}%. Больше — только администратор.`}</p>
+      <form class="form" id="sf">
+        <input name="login" list="authorsList" placeholder="ник автора на GitHub" required value="${esc(prefill || "")}">
+        <datalist id="authorsList">${d.authors.map((a) => `<option value="${esc(a.login)}">`).join("")}</datalist>
+        <div class="shop-row">${presets.map(([p, n]) => `<button type="button" class="btn ghost sm" data-p="${p}">${p}% · ${sign(p - d.base)}%${n ? " · " + n : ""}</button>`).join("")}
+          <button type="button" class="btn ghost sm" data-p="auto">↺ автоматически</button></div>
+        <label>Доля автора, % <input name="pct" type="number" min="0" max="${max}" step="1" placeholder="например 90"></label>
+        <p class="muted" id="sfHint"></p>
+        <textarea name="reason" rows="2" placeholder="Обоснование: почему этому автору такая ставка (обязательно)" required></textarea>
+        <button class="btn">Сохранить ставку</button> <span id="sfMsg" class="muted"></span>
+      </form>
+    </section>
+    <section class="bx-box"><h2>Авторы (${d.authors.length})</h2>
+      <table class="bx-table"><tr><th>Автор</th><th>Доля</th><th>Почему</th><th>Товаров</th><th></th></tr>
+      ${d.authors.map((a) => `<tr><td>${a.avatar ? `<img src="${esc(a.avatar)}&s=40" alt="" style="width:22px;height:22px;border-radius:50%;vertical-align:middle"> ` : ""}<a href="/?author=${encodeURIComponent(a.login)}" target="_blank">${esc(a.login)}</a></td>
+        <td>${shareChip(a.pct, a.tier, a.diff)} <span class="muted">${esc(a.tier)}${a.diff ? " · " + sign(a.diff) + "%" : ""}</span></td>
+        <td class="muted">${src(a)}</td><td>${a.items}${a.paid ? ` (платных ${a.paid})` : ""}</td>
+        <td>${a.source === "owner" ? "" : `<button class="btn ghost sm" data-edit="${esc(a.login)}">Изменить</button>`}</td></tr>`).join("")}</table></section>
+    ${d.log.length ? `<section class="bx-box"><h2>История ставок</h2><table class="bx-table">${d.log.map((x) => `<tr><td>${dt(x.t)}</td><td><b>${esc(x.login)}</b></td>
+      <td>${x.from}% → ${x.to}%${x.auto ? " (авто)" : ""}</td><td class="muted">${esc(x.by)}: «${esc(x.reason)}»</td></tr>`).join("")}</table></section>` : ""}`;
+  const f = document.getElementById("sf");
+  const hint = () => { const p = Number(f.pct.value); document.getElementById("sfHint").textContent = f.pct.value === "" ? "" :
+    `Автор получит ${p}% · комиссия AnyTube ${100 - p}%${p > 100 ? " (платформа доплачивает " + (p - 100) + "% из своих)" : ""} · ${sign(p - d.base)}% к обычной ставке`; };
+  f.pct.oninput = hint;
+  let auto = false;
+  f.querySelectorAll("[data-p]").forEach((b) => (b.onclick = () => { auto = b.dataset.p === "auto"; f.pct.value = auto ? "" : b.dataset.p; hint(); if (auto) document.getElementById("sfHint").textContent = "Вернуть ставку по правилам: обычная / проверенный / модератор"; }));
+  root.querySelectorAll("[data-edit]").forEach((b) => (b.onclick = () => { f.login.value = b.dataset.edit; f.scrollIntoView({ behavior: "smooth" }); f.pct.focus(); }));
+  f.onsubmit = async (e) => {
+    e.preventDefault();
+    const p = auto ? "auto" : f.pct.value;
+    if (p === "") return alert("Выберите долю или «автоматически»");
+    if (Number(p) > 100 && !confirm(`Ставка ${p}% — отрицательная комиссия: AnyTube будет доплачивать ${f.login.value} ${Number(p) - 100}% с каждой продажи из своих денег. Точно?`)) return;
+    const r = await post("/api/mod/share", { login: f.login.value.trim(), pct: p, reason: f.reason.value });
+    if (r.error) return (document.getElementById("sfMsg").textContent = "❌ " + r.error);
+    shares();
+  };
+}
+// ── модераторы (только администратор) ──
+async function mods() {
+  const d = await api("/api/mod/shares");
+  if (d.error || !d.me.admin) { root.innerHTML = `<div class="empty">${esc(d.error || "Только для администратора")}</div>`; return; }
+  root.className = "";
+  document.getElementById("modsTab").hidden = false;
+  root.innerHTML = `<section class="bx-box"><h2>Назначить модератора</h2>
+      <p class="muted">Модератор входит на сайт через GitHub и видит эту страницу. Модераторы автоматически получают долю ${d.verified}%.</p>
+      <form class="form" id="mf"><input name="login" placeholder="ник на GitHub" required>
+        <label><input type="checkbox" name="content" checked> 🛡 Контент: проверка новых видео, жалобы, скрытие, блокировки</label>
+        <label><input type="checkbox" name="shares"> 💰 Доли авторов: ставки до ${d.modMax}% и «проверенные авторы»</label>
+        <button class="btn">Сохранить</button></form></section>
+    <section class="bx-box"><h2>Модераторы (${d.mods.length})</h2>
+      ${d.mods.length ? `<table class="bx-table"><tr><th>Ник</th><th>Права</th><th>С какого</th><th></th></tr>${d.mods.map((m) => `<tr><td><b>${esc(m.login)}</b></td>
+        <td>${[m.content && "🛡 контент", m.shares && "💰 доли"].filter(Boolean).join(", ") || "—"}</td><td>${dt(m.t)}</td>
+        <td><button class="btn ghost sm" data-ed="${esc(m.login)}" data-c="${m.content ? 1 : ""}" data-s="${m.shares ? 1 : ""}">Изменить</button>
+        <button class="btn danger sm" data-rm="${esc(m.login)}">Снять</button></td></tr>`).join("")}</table>` : `<p class="muted">Пока никого.</p>`}</section>`;
+  const f = document.getElementById("mf");
+  f.onsubmit = async (e) => { e.preventDefault(); const r = await post("/api/mod/mods", { login: f.login.value.trim(), content: f.content.checked, shares: f.shares.checked }); if (r.error) return alert(r.error); mods(); };
+  root.querySelectorAll("[data-ed]").forEach((b) => (b.onclick = () => { f.login.value = b.dataset.ed; f.content.checked = !!b.dataset.c; f.shares.checked = !!b.dataset.s; }));
+  root.querySelectorAll("[data-rm]").forEach((b) => (b.onclick = async () => { if (!confirm(`Снять ${b.dataset.rm} с модерации?`)) return; await post("/api/mod/mods", { login: b.dataset.rm, remove: true }); mods(); }));
+}
 document.querySelectorAll("#mtabs a").forEach((a) => (a.onclick = () => show(a.dataset.t)));
+api("/api/bux/me").then((m) => { if (m.user?.admin) document.getElementById("modsTab").hidden = false; });
 show(TAB);
 </script>
 </body>

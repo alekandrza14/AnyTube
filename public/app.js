@@ -20,11 +20,13 @@ const badge = (v) => {
     : `<span class="ribbon free">🖼 ОБОИ</span><span class="pricetag free">БЕСПЛАТНО</span>`;
   return k || price ? `<span class="kb">${[k, price && (s ? "💰 " + price : price)].filter(Boolean).join(" · ")}</span>` : "";
 };
+// процент, который автор получает с продаж (рядом с аватаркой): кто для кого батя
+const shareChip = (pct, tier, diff) => pct == null ? "" : `<span class="share-chip ${pct > 100 ? "legend" : pct >= 90 ? "vip" : pct > 63 ? "plus" : ""}" title="Автор получает ${pct}% от денег покупателей${tier ? " · " + tier : ""}${diff ? ` (${diff > 0 ? "+" : ""}${diff}% к обычной ставке)` : ""}">${pct > 100 ? "👑 " : pct >= 90 ? "✅ " : ""}${pct}%</span>`;
 const card = (v) => `
   <a class="card" href="/watch?v=${encodeURIComponent(v.id)}">
     <div class="thumb"><video src="${esc(v.src)}#t=1" preload="metadata" muted></video><div class="play">▶</div>${v.duration ? `<span class="dur">${fmtDur(v.duration)}</span>` : ""}${v.partCount > 1 ? `<span class="pc">${v.partCount} ч.</span>` : ""}${badge(v)}</div>
     <div class="meta"><img src="${esc(v.avatar)}&s=72" alt="" loading="lazy">
-      <div><h3>${esc(v.title)}</h3><p>${esc(v.owner)} · ${esc(v.repoTitle)}</p><p><span class="likes">+${v.likes || 0}</span>${v.commentCount ? ` · 💬 ${v.commentCount}` : ""}${v.dislikeCount ? ` · 👎 ${v.dislikeCount}` : ""} · ${ago(v.updated)}</p></div>
+      <div><h3>${esc(v.title)}</h3><p>${esc(v.owner)}${shareChip(v.share)} · ${esc(v.repoTitle)}</p><p><span class="likes">+${v.likes || 0}</span>${v.commentCount ? ` · 💬 ${v.commentCount}` : ""}${v.dislikeCount ? ` · 👎 ${v.dislikeCount}` : ""} · ${ago(v.updated)}</p></div>
     </div>
   </a>`;
 

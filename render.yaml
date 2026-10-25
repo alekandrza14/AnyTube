@@ -45,7 +45,7 @@ services:
       # ── Магазин и СБП ──
       - key: PAID_TOKEN         # classic-токен аккаунта alekandrza14 с галочкой repo (читает платные приватные репо)
         sync: false
-      - key: SALE_COMMISSION    # доля AnyTube с продаж (0.37 = 37%, автор получает 63%)
+      - key: SALE_COMMISSION    # обычная доля AnyTube с продаж (0.37 = 37%, автор получает 63%; проверенные и модераторы — 90%)
         value: "0.37"
       - key: SBP_PHONE          # номер для пополнения по СБП, например +7 900 123-45-67
         sync: false
