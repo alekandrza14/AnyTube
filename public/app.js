@@ -42,3 +42,21 @@ const card = (v) => `
       `<a href="mailto:${esc(c.email)}">✉ ${esc(c.email)}</a>` + (c.phone ? ` · <a href="tel:${esc(c.phone.replace(/[^+\d]/g, ""))}">📞 ${esc(c.phone)}</a>` : "");
   }).catch(() => {});
 })();
+
+// Видео грузятся прямо с GitHub (мимо сервера — экономим трафик Render).
+// Если браузер не смог сыграть прямую ссылку (редкие браузеры, сбой GitHub), один раз переключаемся на сервер AnyTube.
+const viaServer = (url) => {
+  const m = String(url).match(/^https:\/\/(?:raw\.githubusercontent\.com|media\.githubusercontent\.com\/media)\/([^/]+)\/([^/]+)\/[^/]+\/(.+?)(?:[?#].*)?$/);
+  return m ? `/video/${m[1]}/${m[2]}/${m[3]}` : null;
+};
+document.addEventListener("error", (e) => {
+  const el = e.target;
+  if (!el || el.tagName !== "VIDEO" || el.dataset.viaServer) return;
+  const alt = viaServer(el.currentSrc || el.src);
+  if (!alt) return;
+  el.dataset.viaServer = "1";
+  const t = el.currentTime || 0, play = !el.paused || el.autoplay;
+  el.src = alt + (String(el.src).includes("#t=") ? "#t=1" : "");
+  if (t) el.addEventListener("loadedmetadata", () => { el.currentTime = t; }, { once: true });
+  if (play) el.play().catch(() => {});
+}, true);

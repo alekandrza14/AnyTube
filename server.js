@@ -75,7 +75,13 @@ const byNew = (a, b) => new Date(b.updated) - new Date(a.updated);
 let cache = { at: 0, videos: [], files: new Map(), error: null };
 let refreshing = null;
 const fileKey = (owner, repo, p) => `${owner}/${repo}/${p}`.toLowerCase();
-const videoSrc = (owner, repo, p) => `/video/${owner}/${repo}/${p.split("/").map(encodeURIComponent).join("/")}`;
+// Видео идут в браузер ПРЯМО с GitHub (raw / LFS), а не через сервер: трафик Render не тратится.
+// VIDEO_DIRECT=off — по-старому, через сервер. Если браузер не смог сыграть прямую ссылку, страница сама переключится на /video/…
+const DIRECT = !/^(off|0|no|false)$/i.test(process.env.VIDEO_DIRECT || "on");
+const encPath = (p) => p.split("/").map(encodeURIComponent).join("/");
+const proxySrc = (owner, repo, p) => `/video/${owner}/${repo}/${encPath(p)}`;
+const videoSrc = (owner, repo, p, branch = "HEAD", lfs = false) =>
+  DIRECT ? `${lfs ? LFS_RAW : RAW}/${owner}/${repo}/${encodeURIComponent(branch || "HEAD")}/${encPath(p)}` : proxySrc(owner, repo, p);
 
 async function searchRepos(q) {
   const repos = [];
@@ -117,9 +123,9 @@ async function manifestVideo(repo, branch, files) {
     title: String(m.title || repo.description || virtual).slice(0, 300),
     repoTitle: repo.name.slice(PREFIX.length).replace(/[_-]+/g, " ") || repo.name,
     stars: repo.stargazers_count, updated: repo.pushed_at, created: repo.created_at, repoUrl: repo.html_url,
-    src: videoSrc(owner, parts[0].repo === repo.name ? repo.name : parts[0].repo, parts[0].path),
+    src: videoSrc(owner, parts[0].repo, parts[0].path, parts[0].repo === repo.name ? branch : "main", !!parts[0].lfs),
     parts: parts.map((p, i) => ({ n: i + 1, duration: Number(p.duration) || 0, size: Number(p.size) || 0,
-      src: videoSrc(owner, p.repo, p.path), file: p.path })),
+      src: videoSrc(owner, p.repo, p.path, p.repo === repo.name ? branch : "main", !!p.lfs), file: p.path })),
     descChars, descChunks: chunks.length,
     _desc: chunks.map((c) => ({ repo: c.repo, path: c.path, size: Number(c.size) || 0 })),
     ...shopInfo(m, owner, repo, okPath),
@@ -204,7 +210,7 @@ async function repoVideos(repo, files) {
       updated: repo.pushed_at,
       created: repo.created_at,
       repoUrl: repo.html_url,
-      src: videoSrc(repo.owner.login, repo.name, f.path),
+      src: videoSrc(repo.owner.login, repo.name, f.path, branch, f.size < 300),
     }))
     .map((v) => (files.set(fileKey(v.owner, v.repo, v.path), { branch, lfs: v.lfs }), v));
 }

@@ -9,6 +9,8 @@ services:
     envVars:
       - key: GITHUB_TOKEN
         sync: false
+      - key: VIDEO_DIRECT       # on — видео идут прямо с GitHub (не тратят трафик Render), off — через сервер
+        value: "on"
       - key: CACHE_MINUTES
         value: "10"
       - key: NODE_VERSION
